@@ -6,10 +6,28 @@ Local HTTP server + web UI for [Reza2kn/Bina-0.4-Koochik](https://huggingface.co
 model/          model code + configs from HF (weights downloaded)
 server/ocr.py   model loading + transcription (splits regions that loop)
 server/app.py   HTTP server
-server/static/  web UI
+server/jobs.py  queue admission, pause, SQLite job history
+server/monitor.py  GPU/CPU/RAM samples for the admin page
+server/static/  web UI (vendor/: uPlot charts)
 samples/        test images and outputs
+assets/         README screenshots
+data/           job history + thumbnails (created at runtime, not in git)
 .venv/          Python 3.11 env (not in git)
 ```
+
+## Screenshots
+
+English:
+
+![Extracting text from an English book page](assets/usage-english.webp)
+
+Persian:
+
+![Extracting text from a Persian book page](assets/usage-persian.webp)
+
+Admin panel (`/admin`):
+
+![Admin dashboard with live GPU/CPU cards, 24h stats and trend charts](assets/admin.webp)
 
 ## Model
 
@@ -31,9 +49,20 @@ uv pip install -p .venv huggingface_hub -r model/requirements.txt
 OCR_TOKEN=secret ./run.sh --host 100.x.y.z     # Tailscale IP; token required off localhost
 ```
 
-UI: http://127.0.0.1:8001/ , admin (queue, pause, job history): /admin
+UI: http://127.0.0.1:8001/ , admin: /admin
 
-Run as a service on boot: see `deploy/bina-ocr.service`. Job history and thumbnails live in `data/` (30 days / 5000 jobs).
+Tested on Linux. On other systems the process RAM card shows `-`.
+
+### Admin panel
+
+- **Live** (only while the page is open, one sample per 5 s, last 10 minutes): queue, GPU memory/load/temperature, process CPU and RAM. Nothing is sampled when no one is watching.
+- **Last 24 hours**: jobs, success %, errors, incomplete, avg and p95 seconds, requests rejected because the queue was full.
+- **Trends** (1h / 24h / 7d): jobs per bucket, latency, seconds vs image size, top clients, task split.
+- **Jobs**: filter by status, client, task or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
+- **Pause / Resume**: pause rejects new `/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
+- **Clear history** (footer, click twice): deletes all jobs, thumbnails and stored text.
+
+Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails and extracted text live in `data/` (30 days / 5000 jobs). Anyone with admin access can read the stored text.
 
 ## API
 
@@ -104,7 +133,21 @@ const { text } = await r.json();
 
 ### Admin
 
-`GET /admin/state` (paused, running job, waiting, 24h stats, GPU memory), `GET /admin/jobs?sort=recent|slowest|failed`, `GET /admin/thumb/<id>`, `POST /admin/pause`, `POST /admin/resume`. Same auth.
+Same auth as `/ocr`. Used by the `/admin` page.
+
+| Route | Returns |
+|---|---|
+| `GET /admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `stats` (last 24h: `jobs_24h`, `errors_24h`, `incomplete_24h`, `busy_24h`, `success_pct`, `avg_seconds`, `p95_seconds`), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
+| `GET /admin/series?range=1h\|24h\|7d` | per bucket `t`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`; plus `scatter` (`[megapixels, seconds]`), `clients` and `tasks` (`[name, count]`) |
+| `GET /admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `task`, `id`, `offset`, `limit` (default 50, max 200) |
+| `GET /admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
+| `GET /admin/thumb/<id>` | JPEG thumbnail |
+| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` |
+| `POST /admin/clear` | deletes all job history |
+
+`samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
+
+Bad query values return `400`.
 
 ### `GET /docs`, `GET /llms.txt`
 

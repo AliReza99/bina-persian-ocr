@@ -66,7 +66,7 @@
   dialog dt { color:var(--muted); } dialog dd { margin:0; overflow-wrap:anywhere; }
   dialog pre { white-space:pre-wrap; background:var(--bg); padding:10px; border-radius:8px; color:var(--err); }
   dialog h3 { font-size:13px; color:var(--muted); margin:16px 0 6px; font-weight:500; }
-  dialog pre.ocr { color:var(--fg); max-height:40vh; overflow:auto; font:inherit; line-height:1.6; }
+  dialog pre.ocr { color:var(--fg); max-height:40vh; overflow:auto; font:inherit; line-height:1.6; unicode-bidi:plaintext; }
   td.time { cursor:help; text-decoration:underline dotted var(--muted); }
   .u-legend { font-size:12px; color:var(--muted); }
   footer { margin-top:32px; padding-top:16px; border-top:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; color:var(--muted); }
@@ -283,7 +283,7 @@ function openDetail(j) {
     ['Task', esc(j.task)], ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
   $('d-body').innerHTML = `<a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"></a>
     <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${j.error ? `<pre>${esc(j.error)}</pre>` : ''}
-    <h3>Extracted text</h3><pre id="d-text" class="ocr" dir="auto">Loading…</pre>`;
+    <h3>Extracted text</h3><pre id="d-text" class="ocr">Loading…</pre>`;
   $('detail').showModal();
   get(`/admin/text/${j.id}`).then(r => {
     if ($('d-title').textContent === `Job #${j.id}`) $('d-text').textContent = r.text ?? 'No text (failed, still running, or recorded before text was kept)';
