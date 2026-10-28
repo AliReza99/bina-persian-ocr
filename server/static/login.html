@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,10 +17,10 @@
 <body>
 <form method="post" action="/login">
   <h1 style="font-size:20px;margin:0">Bina OCR</h1>
-  <label for="token">توکن دسترسی</label>
+  <label for="token">Access token</label>
   <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
-  <button>ورود</button>
-  <p id="wrong" class="warn" role="alert" hidden>توکن اشتباه است</p>
+  <button>Log in</button>
+  <p id="wrong" class="warn" role="alert" hidden>Wrong token</p>
 </form>
 <script>if (location.search.includes('wrong')) document.getElementById('wrong').hidden = false;</script>
 </body>

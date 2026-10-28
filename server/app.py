@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from PIL import Image
 
-import jobs, ocr
+import jobs, monitor, ocr
 
 VERSION = '0.5'
 STATIC = pathlib.Path(__file__).resolve().parent / 'static'
@@ -24,6 +24,12 @@ Image.MAX_IMAGE_PIXELS = 50_000_000  # decompression-bomb guard: Pillow raises a
 TOKEN = os.environ.get('OCR_TOKEN', '')
 PUBLIC = {'/health', '/login'}
 PAGES = {'/': 'index.html', '/admin': 'admin.html', '/login': 'login.html'}
+VENDOR = {'/vendor/uPlot.iife.min.js': 'text/javascript', '/vendor/uPlot.min.css': 'text/css'}
+
+
+def gpu_mem():
+    free, total = ocr.torch.cuda.mem_get_info()
+    return (total - free) // 2**20, total // 2**20
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,17 +89,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'status': 'paused' if s['paused'] else 'ok', 'device': ocr.device,
                                     'version': VERSION, 'busy': s['running'] is not None,
                                     'waiting': s['waiting'], 'docs': '/docs'})
+        if path in VENDOR:
+            return self.send(200, (STATIC / path[1:]).read_bytes(), VENDOR[path], [('Cache-Control', 'max-age=86400')])
         if path == '/admin/state':
-            gpu = None
-            if ocr.device == 'cuda':
-                free, total = ocr.torch.cuda.mem_get_info()
-                gpu = {'used_mb': (total - free) // 2**20, 'total_mb': total // 2**20}
-            return self.reply(200, {**jobs.state(), 'stats': jobs.stats(), 'gpu': gpu, 'version': VERSION})
+            return self.reply(200, {**jobs.state(), 'stats': jobs.stats(), 'version': VERSION, 'device': ocr.device,
+                                    'uptime': round(time.time() - monitor.started), 'samples': monitor.poll(gpu_mem if ocr.device == 'cuda' else None)})
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        if path == '/admin/series':
+            if q.get('range', '24h') not in jobs.RANGES:
+                return self.reply(400, {'error': f'range must be one of {list(jobs.RANGES)}'})
+            return self.reply(200, jobs.series(q.get('range', '24h')))
         if path == '/admin/jobs':
-            sort = parse_qs(url.query).get('sort', ['recent'])[0]
-            if sort not in jobs.SORTS:
-                return self.reply(400, {'error': f'sort must be one of {list(jobs.SORTS)}'})
-            return self.reply(200, {'jobs': jobs.recent(sort)})
+            sort, status = q.get('sort', 'recent'), q.get('status', '')
+            if sort not in jobs.SORTS or status not in jobs.STATUSES:
+                return self.reply(400, {'error': f'sort must be one of {list(jobs.SORTS)}, status one of {list(jobs.STATUSES)}'})
+            try:
+                job_id = int(q['id']) if q.get('id') else None
+                offset, limit = max(0, int(q.get('offset', 0))), min(200, max(1, int(q.get('limit', 50))))
+            except ValueError:
+                return self.reply(400, {'error': 'id, offset and limit must be integers'})
+            rows, total = jobs.recent(sort, status, q.get('client', ''), q.get('task', ''), job_id, offset, limit)
+            return self.reply(200, {'jobs': rows, 'total': total})
+        job_id = path.removeprefix('/admin/text/')
+        if job_id != path and job_id.isdigit():
+            return self.reply(200, {'text': jobs.text(int(job_id))})
         job_id = path.removeprefix('/admin/thumb/')
         if job_id != path and job_id.isdigit() and (jobs.THUMBS / f'{job_id}.jpg').exists():
             return self.send(200, (jobs.THUMBS / f'{job_id}.jpg').read_bytes(), 'image/jpeg')
@@ -113,6 +132,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ('/admin/pause', '/admin/resume'):
             jobs.set_paused(url.path == '/admin/pause')
             return self.reply(200, jobs.state())
+        if url.path == '/admin/clear':
+            jobs.clear()
+            return self.reply(200, {'cleared': True})
         if url.path == '/ocr':
             return self.ocr(url)
         self.reply(404, NOT_FOUND)

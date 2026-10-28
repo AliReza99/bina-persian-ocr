@@ -1,108 +1,338 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bina OCR Admin</title>
+<link rel="stylesheet" href="/vendor/uPlot.min.css">
+<script src="/vendor/uPlot.iife.min.js"></script>
 <style>
-  :root { --bg:#f6f6f4; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#ddd; --accent:#2f6fde; --warn:#c2410c; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ececea; --muted:#9a9a94; --card:#20201e; --line:#3a3a37; --accent:#6b9cf0; --warn:#fb923c; } }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui, "Vazirmatn", Tahoma, sans-serif; }
-  main { max-width:1200px; margin:0 auto; padding:16px; }
+  :root { --bg:#f4f4f1; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e2e2dd; --accent:#2f6fde;
+          --ok:#1f9d6b; --inc:#d99a1b; --err:#d4483b; --s2:#8a5cd6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#131312; --fg:#ececea; --muted:#9a9a94; --card:#1d1d1b; --line:#33332f;
+          --accent:#6b9cf0; --ok:#3cc28d; --inc:#f0b43c; --err:#f06a5c; --s2:#a98bea; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif; }
+  main { max-width:1280px; margin:0 auto; padding:16px; }
+  header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:20px; }
   h1 { font-size:20px; margin:0; }
-  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
-  button, select { font:inherit; padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:16px; }
-  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .tile b { display:block; font-size:22px; }
-  .tile span { color:var(--muted); font-size:13px; }
-  .table { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:start; white-space:nowrap; }
-  th { color:var(--muted); font-weight:500; font-size:13px; }
-  td img { height:56px; display:block; border-radius:4px; }
-  .warn { color:var(--warn); }
+  h2 { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:24px 0 10px; display:flex; align-items:center; gap:10px; }
   a { color:var(--accent); }
+  button, select, input { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--err); border-color:var(--err); }
+  button:disabled { opacity:.4; cursor:default; }
+  .badge { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; border-radius:99px; background:var(--card); border:1px solid var(--line); font-weight:600; }
+  .badge::before { content:""; width:9px; height:9px; border-radius:50%; background:var(--ok); }
+  .badge.busy::before { background:var(--accent); animation:pulse 1.2s infinite; }
+  .badge.paused::before { background:var(--inc); }
+  @keyframes pulse { 50% { opacity:.3; } }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0; }
+  .card .k { color:var(--muted); font-size:12px; }
+  .card .v { font-size:24px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .card .v small { font-size:13px; color:var(--muted); font-weight:400; }
+  .meter { height:8px; border-radius:4px; background:var(--line); overflow:hidden; margin-top:8px; }
+  .meter i { display:block; height:100%; background:var(--accent); transition:width .4s; }
+  svg.spark { display:block; width:100%; height:36px; margin-top:6px; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap:12px; }
+  .chart { height:240px; }
+  .tabs { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .tabs button { border:0; border-radius:0; padding:3px 10px; text-transform:none; letter-spacing:0; }
+  .tabs button[aria-pressed=true] { background:var(--accent); color:#fff; }
+  .bars div { display:grid; grid-template-columns:minmax(0, 1fr) 2fr auto; gap:8px; align-items:center; margin:6px 0; }
+  .bars span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bars b { height:10px; border-radius:5px; background:var(--accent); }
+  .donut { display:flex; gap:16px; align-items:center; }
+  .donut > div:first-child { width:120px; height:120px; border-radius:50%; flex:none;
+    -webkit-mask:radial-gradient(circle, transparent 52%, #000 53%); mask:radial-gradient(circle, transparent 52%, #000 53%); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:3px; margin-inline-end:6px; }
+  .filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+  .filters input { width:110px; }
+  .table { overflow-x:auto; padding:0; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:start; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover, tbody tr:focus { background:color-mix(in srgb, var(--accent) 8%, transparent); outline:none; }
+  td img { height:44px; display:block; border-radius:4px; }
+  .st { font-weight:600; } .st.ok { color:var(--ok); } .st.incomplete { color:var(--inc); } .st.error { color:var(--err); } .st.running { color:var(--accent); }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:flex-end; padding:10px; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg); max-width:min(720px, calc(100vw - 32px)); width:100%; padding:20px; }
+  dialog::backdrop { background:#0007; }
+  dialog img { max-width:100%; border-radius:8px; display:block; margin:10px 0; }
+  dialog dl { display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:0; }
+  dialog dt { color:var(--muted); } dialog dd { margin:0; overflow-wrap:anywhere; }
+  dialog pre { white-space:pre-wrap; background:var(--bg); padding:10px; border-radius:8px; color:var(--err); }
+  dialog h3 { font-size:13px; color:var(--muted); margin:16px 0 6px; font-weight:500; }
+  dialog pre.ocr { color:var(--fg); max-height:40vh; overflow:auto; font:inherit; line-height:1.6; }
+  td.time { cursor:help; text-decoration:underline dotted var(--muted); }
+  .u-legend { font-size:12px; color:var(--muted); }
+  footer { margin-top:32px; padding-top:16px; border-top:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; color:var(--muted); }
 </style>
 </head>
 <body>
 <main>
-  <div class="bar">
+  <header>
     <h1>Bina OCR</h1>
-    <span id="status" role="status"></span>
+    <span id="status" class="badge" role="status"></span>
     <button id="toggle" class="primary"></button>
-    <a href="/" style="margin-inline-start:auto">آزمایش OCR</a>
+    <span id="server" style="color:var(--muted)"></span>
+    <a href="/" style="margin-inline-start:auto">Test OCR</a>
     <a href="/docs">API docs</a>
+  </header>
+
+  <h2>Live, while this page is open (up to 10 minutes)</h2>
+  <div class="grid" id="live"></div>
+
+  <h2>Last 24 hours</h2>
+  <div class="grid" id="tiles"></div>
+
+  <h2>Trends
+    <span class="tabs" id="range">
+      <button data-r="1h">1h</button><button data-r="24h">24h</button><button data-r="7d">7d</button>
+    </span>
+  </h2>
+  <div class="charts">
+    <div class="card"><div class="k">Jobs per bucket</div><div class="chart" id="c-jobs"></div></div>
+    <div class="card"><div class="k">Latency, seconds</div><div class="chart" id="c-lat"></div></div>
+    <div class="card"><div class="k">Seconds vs megapixels</div><div class="chart" id="c-scatter"></div></div>
+    <div class="card">
+      <div class="k">Clients</div><div class="bars" id="clients"></div>
+      <div class="k" style="margin-top:14px">Tasks</div><div class="donut" id="tasks"></div>
+    </div>
   </div>
-  <div class="tiles" id="tiles"></div>
-  <div class="bar">
-    <label for="sort">مرتب سازی</label>
-    <select id="sort">
-      <option value="recent">جدیدترین</option>
-      <option value="slowest">کندترین</option>
-      <option value="failed">خطا و ناقص</option>
+
+  <h2>Jobs</h2>
+  <div class="filters">
+    <select id="f-status" aria-label="Status">
+      <option value="">All statuses</option><option value="ok">OK</option><option value="incomplete">Incomplete</option>
+      <option value="error">Error</option><option value="running">Running</option>
+    </select>
+    <select id="f-client" aria-label="Client"><option value="">All clients</option></select>
+    <select id="f-task" aria-label="Task"><option value="">All tasks</option></select>
+    <input id="f-id" type="number" min="1" placeholder="Job #" aria-label="Job id">
+    <select id="f-sort" aria-label="Sort">
+      <option value="recent">Newest</option><option value="slowest">Slowest</option><option value="failed">Errors first</option>
     </select>
   </div>
-  <div class="table">
+  <div class="card table">
     <table>
-      <thead><tr><th>#</th><th>تصویر</th><th>زمان</th><th>کلاینت</th><th>نوع</th><th>ابعاد</th><th>حجم</th><th>ثانیه</th><th>کاراکتر</th><th>وضعیت</th></tr></thead>
+      <thead><tr><th>#</th><th>Image</th><th>Time</th><th>Client</th><th>Task</th><th>Size</th><th>Bytes</th><th>Seconds</th><th>Chars</th><th>Status</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
+    <div class="pager"><span id="page-info"></span><button id="prev">Previous</button><button id="next">Next</button></div>
   </div>
+
+  <footer>
+    <span>History is kept 30 days.</span>
+    <button id="clear" class="danger">Clear history</button>
+  </footer>
 </main>
+
+<dialog id="detail" aria-labelledby="d-title">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 id="d-title" style="margin:0;font-size:18px;text-transform:none;letter-spacing:0;color:var(--fg)"></h2>
+    <button id="d-close">Close</button>
+  </div>
+  <div id="d-body"></div>
+</dialog>
+
 <script>
 const $ = id => document.getElementById(id);
-let state = null;
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const when = t => new Date(t * 1000).toLocaleString('en-GB');
+const ago = t => {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? 'just now' : [[86400, 'd'], [3600, 'h'], [60, 'm']].map(([n, u]) => s >= n && Math.floor(s / n) + u + ' ago').find(Boolean);
+};
+let fullTime = false;  // table time column: relative by default, a click switches every row
+const kb = b => (b / 1024).toFixed(0) + ' KB';
+const dur = s => [[86400, 'd'], [3600, 'h'], [60, 'm']].reduce((o, [n, u]) => s >= n || o ? o + Math.floor(s / n) + u + ' ' : o, '').trim() || s + 's';
+const PAGE = 50;
+let state = null, range = '24h', offset = 0, total = 0;
+const plots = {};
 
 const get = async url => {
   const res = await fetch(url);
   if (res.status === 401) location.href = '/login';
   return res.json();
 };
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const when = t => new Date(t * 1000).toLocaleString('fa-IR');
-const kb = b => (b / 1024).toFixed(0) + ' KB';
+
+function spark(values, color) {
+  const v = values.map(x => x ?? null), nums = v.filter(x => x != null);
+  if (nums.length < 2) return '<svg class="spark"></svg>';
+  const max = Math.max(...nums), min = Math.min(0, ...nums), span = max - min || 1;
+  const pts = v.map((x, i) => x == null ? null : `${(i / (v.length - 1) * 100).toFixed(1)},${(34 - (x - min) / span * 32).toFixed(1)}`).filter(Boolean);
+  return `<svg class="spark" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="0,36 ${pts.join(' ')} 100,36" fill="${color}" fill-opacity=".12" stroke="none"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+const card = (k, v, extra = '') => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div>${extra}</div>`;
+const meter = pct => `<div class="meter"><i style="width:${Math.min(100, pct)}%"></i></div>`;
 
 async function refresh() {
   state = await get('/admin/state');
-  const s = state.stats, run = state.running;
-  $('status').textContent = state.paused ? 'متوقف' : run ? `در حال پردازش #${run.id} (${Math.round(Date.now() / 1000 - run.started)} ثانیه)` : 'آماده';
-  $('status').className = state.paused ? 'warn' : '';
-  $('toggle').textContent = state.paused ? 'ادامه' : 'توقف';
-  const tiles = [
-    ['در صف', `${state.waiting} / ${state.max_waiting}`],
-    ['کار در ۲۴ ساعت', s.jobs_24h],
-    ['خطا / ناقص', `${s.errors_24h} / ${s.incomplete_24h}`],
-    ['میانگین ثانیه', s.avg_seconds ?? '-'],
-    ['p95 ثانیه', s.p95_seconds ?? '-'],
-    ['حافظه GPU', state.gpu ? `${state.gpu.used_mb} / ${state.gpu.total_mb} MB` : 'CPU'],
-  ];
-  $('tiles').innerHTML = tiles.map(([k, v]) => `<div class="tile"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
+  const run = state.running, smp = state.samples, last = smp[smp.length - 1] || {};
+  $('status').textContent = state.paused ? 'Paused' : run ? `Processing #${run.id} · ${Math.round(Date.now() / 1000 - run.started)}s` : 'Ready';
+  $('status').className = 'badge ' + (state.paused ? 'paused' : run ? 'busy' : '');
+  $('toggle').textContent = state.paused ? 'Resume' : 'Pause';
+  $('server').textContent = `v${state.version} · ${state.device} · up ${dur(state.uptime)}`;
+  const col = k => smp.map(s => s[k]), acc = css('--accent'), s2 = css('--s2');
+  const live = [card('Queue', `${state.waiting} <small>/ ${state.max_waiting} waiting</small>`,
+    meter(state.waiting / state.max_waiting * 100) + `<div class="k" style="margin-top:8px">${run ? 'Running: ' + esc(run.client) : 'Model idle'}</div>`)];
+  if (last.gpu_total_mb) live.push(
+    card('GPU memory', `${(last.gpu_used_mb / 1024).toFixed(1)} <small>/ ${(last.gpu_total_mb / 1024).toFixed(1)} GB</small>`,
+      meter(last.gpu_used_mb / last.gpu_total_mb * 100) + spark(col('gpu_used_mb'), acc)));
+  if (last.gpu_load != null) live.push(
+    card('GPU load', `${last.gpu_load}<small>%</small>`, spark(col('gpu_load'), acc)),
+    card('GPU temperature', `${last.gpu_temp}<small>°C</small>`, spark(col('gpu_temp'), css(last.gpu_temp >= 80 ? '--err' : '--inc'))));
+  live.push(
+    card('Process CPU', last.cpu == null ? '-' : `${last.cpu}<small>%</small>`, spark(col('cpu'), s2)),
+    card('Process RAM', last.rss_mb == null ? '-' : `${(last.rss_mb / 1024).toFixed(2)} <small>GB</small>`, spark(col('rss_mb'), s2)));
+  $('live').innerHTML = live.join('');
 }
 
-async function loadJobs() {
-  const { jobs } = await get('/admin/jobs?sort=' + $('sort').value);
-  $('rows').innerHTML = jobs.map(j => {
-    const status = j.error ? `<span class="warn" title="${esc(j.error)}">خطا</span>`
-      : j.seconds == null ? 'در جریان' : j.incomplete ? '<span class="warn">ناقص</span>' : 'موفق';
-    return `<tr><td>${j.id}</td>
-      <td><a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="تصویر کار ${j.id}" loading="lazy"></a></td>
-      <td>${when(j.created)}</td><td>${esc(j.client)}</td><td>${esc(j.task)}</td>
-      <td>${j.width}×${j.height}</td><td>${kb(j.bytes)}</td><td>${j.seconds ?? '-'}</td><td>${j.chars ?? '-'}</td><td>${status}</td></tr>`;
-  }).join('');
+async function loadTiles() {
+  const [{ stats: s }, d] = await Promise.all([get('/admin/state'), get('/admin/series?range=24h')]);
+  const jobsPer = d.t.map((_, i) => d.ok[i] + d.incomplete[i] + d.error[i]);
+  const okPct = d.t.map((_, i) => jobsPer[i] ? d.ok[i] / jobsPer[i] * 100 : null);
+  const [ok, inc, err, acc] = ['--ok', '--inc', '--err', '--accent'].map(css);
+  $('tiles').innerHTML = [
+    card('Jobs', s.jobs_24h, spark(jobsPer, acc)),
+    card('Success', s.success_pct == null ? '-' : `${s.success_pct}<small>%</small>`, spark(okPct, ok)),
+    card('Errors', s.errors_24h, spark(d.error, err)),
+    card('Incomplete', s.incomplete_24h, spark(d.incomplete, inc)),
+    card('Avg seconds', s.avg_seconds ?? '-', spark(d.avg, acc)),
+    card('p95 seconds', s.p95_seconds ?? '-', spark(d.p95, acc)),
+    card('Rejected, queue full', s.busy_24h, spark(d.rejected, err)),
+  ].join('');
 }
+
+function plot(id, opts, data) {
+  plots[id]?.destroy();
+  const el = $(id), grid = { stroke: css('--line'), width: 1 }, axis = { stroke: css('--muted'), grid, ticks: grid };
+  plots[id] = new uPlot({ width: el.clientWidth, height: el.clientHeight - 30, axes: [axis, { ...axis, size: 44 }], ...opts }, data, el);
+}
+
+async function loadCharts() {
+  const d = await get('/admin/series?range=' + range);
+  const [ok, inc, err, acc, s2] = ['--ok', '--inc', '--err', '--accent', '--s2'].map(css);
+  const bars = uPlot.paths.bars({ size: [0.7, 40] });
+  const sum = (...ks) => d.t.map((_, i) => ks.reduce((a, k) => a + d[k][i], 0));
+  // stacked: draw the full stack first, then shorter stacks on top of it
+  plot('c-jobs', {
+    scales: { y: { range: (u, min, max) => [0, Math.max(1, max)] } },
+    series: [{}, ...[['Error', err, ['ok', 'incomplete', 'error']], ['Incomplete', inc, ['ok', 'incomplete']], ['OK', ok, ['ok']]]
+      .map(([label, c, ks]) => ({ label, fill: c, stroke: c, paths: bars, points: { show: false },
+        value: (u, v, si, i) => i == null ? '-' : d[ks[ks.length - 1]][i] }))],
+  }, [d.t, sum('ok', 'incomplete', 'error'), sum('ok', 'incomplete'), d.ok]);
+  plot('c-lat', {
+    series: [{}, { label: 'avg', stroke: acc, width: 2, spanGaps: true }, { label: 'p95', stroke: s2, width: 2, dash: [5, 4], spanGaps: true }],
+  }, [d.t, d.avg, d.p95]);
+  plot('c-scatter', {
+    mode: 1, scales: { x: { time: false } },
+    series: [{ label: 'MP' }, { label: 'seconds', stroke: acc, paths: () => null, points: { show: true, size: 7, fill: acc } }],
+  }, [d.scatter.map(p => p[0]), d.scatter.map(p => p[1])]);
+
+  const top = d.clients[0]?.[1] || 1;
+  $('clients').innerHTML = d.clients.slice(0, 8).map(([c, n]) =>
+    `<div><span title="${esc(c)}">${esc(c)}</span><b style="width:${n / top * 100}%"></b><span>${n}</span></div>`).join('') || '<div class="k">No jobs</div>';
+  const palette = [acc, s2, ok, inc, err], all = d.tasks.reduce((a, t) => a + t[1], 0);
+  let at = 0;
+  const stops = d.tasks.map(([, n], i) => `${palette[i % 5]} ${at / all * 360}deg ${(at += n) / all * 360}deg`);
+  $('tasks').innerHTML = all ? `<div style="background:conic-gradient(${stops.join(',')})" role="img" aria-label="Task split"></div>
+    <div>${d.tasks.map(([t, n], i) => `<div><span class="dot" style="background:${palette[i % 5]}"></span>${esc(t)} · ${n} (${Math.round(n / all * 100)}%)</div>`).join('')}</div>`
+    : '<div class="k">No jobs</div>';
+
+  // keep filter choices in step with what the range has seen
+  for (const [sel, list] of [['f-client', d.clients], ['f-task', d.tasks]]) {
+    const el = $(sel), cur = el.value, opts = new Set(list.map(x => x[0]).concat(cur ? [cur] : []));
+    el.innerHTML = el.options[0].outerHTML + [...opts].map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  }
+}
+
+const statusOf = j => j.error ? 'error' : j.seconds == null ? 'running' : j.incomplete ? 'incomplete' : 'ok';
+const STATUS_LABEL = { ok: 'OK', incomplete: 'Incomplete', error: 'Error', running: 'Running' };
+let pageJobs = [];
+
+async function loadJobs() {
+  const q = new URLSearchParams({ sort: $('f-sort').value, status: $('f-status').value, client: $('f-client').value,
+    task: $('f-task').value, id: $('f-id').value, offset, limit: PAGE });
+  const res = await get('/admin/jobs?' + q);
+  pageJobs = res.jobs || [];
+  total = res.total || 0;
+  $('rows').innerHTML = pageJobs.map((j, i) => `<tr tabindex="0" data-i="${i}"><td>${j.id}</td>
+      <td><img src="/admin/thumb/${j.id}" alt="" loading="lazy"></td>
+      <td class="time" title="${fullTime ? ago(j.created) : when(j.created)}">${fullTime ? when(j.created) : ago(j.created)}</td><td>${esc(j.client)}</td><td>${esc(j.task)}</td>
+      <td>${j.width}×${j.height}</td><td>${kb(j.bytes)}</td><td>${j.seconds ?? '-'}</td><td>${j.chars ?? '-'}</td>
+      <td class="st ${statusOf(j)}">${STATUS_LABEL[statusOf(j)]}</td></tr>`).join('')
+    || '<tr><td colspan="10" style="text-align:center;color:var(--muted)">No jobs match</td></tr>';
+  $('page-info').textContent = total ? `${offset + 1}–${offset + pageJobs.length} of ${total}` : '';
+  $('prev').disabled = offset === 0;
+  $('next').disabled = offset + PAGE >= total;
+}
+
+function openDetail(j) {
+  $('d-title').textContent = `Job #${j.id}`;
+  const st = statusOf(j);
+  const rows = [['Status', `<span class="st ${st}">${STATUS_LABEL[st]}</span>`], ['Time', when(j.created)], ['Client', esc(j.client)],
+    ['Task', esc(j.task)], ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
+  $('d-body').innerHTML = `<a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"></a>
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${j.error ? `<pre>${esc(j.error)}</pre>` : ''}
+    <h3>Extracted text</h3><pre id="d-text" class="ocr" dir="auto">Loading…</pre>`;
+  $('detail').showModal();
+  get(`/admin/text/${j.id}`).then(r => {
+    if ($('d-title').textContent === `Job #${j.id}`) $('d-text').textContent = r.text ?? 'No text (failed, still running, or recorded before text was kept)';
+  });
+}
+
+$('rows').onclick = e => {
+  if (e.target.closest('td.time')) { fullTime = !fullTime; return loadJobs(); }
+  const tr = e.target.closest('tr[data-i]'); if (tr) openDetail(pageJobs[tr.dataset.i]); };
+$('rows').onkeydown = e => { if (e.key === 'Enter') $('rows').onclick(e); };
+$('d-close').onclick = () => $('detail').close();
+$('detail').onclick = e => { if (e.target === $('detail')) $('detail').close(); };
+for (const id of ['f-status', 'f-client', 'f-task', 'f-sort', 'f-id']) $(id).onchange = () => { offset = 0; loadJobs(); };
+$('prev').onclick = () => { offset = Math.max(0, offset - PAGE); loadJobs(); };
+$('next').onclick = () => { offset += PAGE; loadJobs(); };
+
+function setRange(r) {
+  range = r;
+  for (const b of $('range').children) b.setAttribute('aria-pressed', b.dataset.r === r);
+  loadCharts();
+}
+$('range').onclick = e => e.target.dataset.r && setRange(e.target.dataset.r);
 
 $('toggle').onclick = async () => {
   await fetch(state.paused ? '/admin/resume' : '/admin/pause', { method: 'POST' });
   refresh();
 };
-$('sort').onchange = loadJobs;
 
-refresh(); loadJobs();
+// two-step confirm instead of a blocking dialog
+let armed = null;
+$('clear').onclick = async () => {
+  if (!armed) {
+    $('clear').textContent = 'Click again to delete all jobs and thumbnails';
+    armed = setTimeout(() => { armed = null; $('clear').textContent = 'Clear history'; }, 4000);
+    return;
+  }
+  clearTimeout(armed); armed = null;
+  await fetch('/admin/clear', { method: 'POST' });
+  $('clear').textContent = 'Clear history';
+  offset = 0; loadTiles(); loadCharts(); loadJobs();
+};
+
+let resizeTimer;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(loadCharts, 200); });
+matchMedia('(prefers-color-scheme: dark)').onchange = () => { loadTiles(); loadCharts(); refresh(); };
+
+refresh(); loadTiles(); setRange(range); loadJobs();
 setInterval(refresh, 2000);
-setInterval(loadJobs, 10000);
+setInterval(() => { loadTiles(); loadCharts(); loadJobs(); }, 15000);
 </script>
 </body>
 </html>
