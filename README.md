@@ -3,25 +3,17 @@
 Local HTTP server + web UI for [Reza2kn/Bina-0.4-Koochik](https://huggingface.co/Reza2kn/Bina-0.4-Koochik) (Persian/English OCR), full model on GPU (BF16) or CPU.
 
 ```
-model/          HF model snapshot (code in git, weights downloaded)
+model/          model code + configs from HF (weights downloaded)
 server/ocr.py   model loading + transcription (splits regions that loop)
 server/app.py   HTTP server
-server/static/  web UI for the server
-webui/          in-browser WebGPU INT4 app (HF Space snapshot)
+server/static/  web UI
 samples/        test images and outputs
 .venv/          Python 3.11 env (not in git)
 ```
 
-## Where the models come from
+## Model
 
-Weights are not in git (too big). All from Hugging Face:
-
-| Path | Source |
-|---|---|
-| `model/` (`model.safetensors`, full BF16) | model [Reza2kn/Bina-0.4-Koochik](https://huggingface.co/Reza2kn/Bina-0.4-Koochik) |
-| `webui/` (ONNX INT4 in `webui/model/shared-models/`, `position-field.npy`) | Space [Reza2kn/Bina-0.4-Koochik](https://huggingface.co/spaces/Reza2kn/Bina-0.4-Koochik) |
-
-Related: [ONNX-WebGPU-INT4](https://huggingface.co/Reza2kn/Bina-0.4-Koochik-ONNX-WebGPU-INT4), base model [nvidia/Nemotron-3.5-Parse](https://huggingface.co/nvidia/Nemotron-3.5-Parse).
+Only the weights (`model/model.safetensors`, 2.4 GB, BF16) are not in git. They come from [Reza2kn/Bina-0.4-Koochik](https://huggingface.co/Reza2kn/Bina-0.4-Koochik), based on [nvidia/Nemotron-3.5-Parse](https://huggingface.co/nvidia/Nemotron-3.5-Parse).
 
 ## Setup (once)
 
@@ -29,18 +21,7 @@ Related: [ONNX-WebGPU-INT4](https://huggingface.co/Reza2kn/Bina-0.4-Koochik-ONNX
 git clone https://github.com/AliReza99/bina-persian-ocr && cd bina-persian-ocr
 uv venv -p 3.11 .venv
 uv pip install -p .venv huggingface_hub -r model/requirements.txt
-.venv/bin/hf download Reza2kn/Bina-0.4-Koochik --local-dir model
-.venv/bin/hf download Reza2kn/Bina-0.4-Koochik --repo-type space --local-dir webui   # only for webui/
-```
-
-The downloads restore the missing weights. Matching files already in git are overwritten with upstream copies, so run `git diff` afterwards if you changed them.
-
-## In-browser app (`webui/`)
-
-Static site, no Python needed. Serve the folder and open it in a WebGPU browser (recent Chrome/Edge):
-
-```sh
-cd webui && python3 -m http.server 8080   # http://127.0.0.1:8080/
+.venv/bin/hf download Reza2kn/Bina-0.4-Koochik model.safetensors --local-dir model
 ```
 
 ## Run
