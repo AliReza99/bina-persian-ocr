@@ -43,9 +43,11 @@ def _ocr_region(image, prompt, flagged):
     return selected['ocr_prediction']
 
 
-def transcribe(image, task='ocr'):
-    """image: RGB PIL image. Returns {'text', 'incomplete'}."""
+def transcribe(image, task='ocr', on_start=None):
+    """image: RGB PIL image. Returns {'text', 'incomplete'}. on_start runs once the model is ours."""
     flagged = []
     with _lock:
+        if on_start:
+            on_start()
         texts = [_ocr_region(image.crop(tuple(r['bbox'])), PROMPTS[task], flagged) for r in regions(image)['regions']]
     return {'text': '\n'.join(t for t in texts if t), 'incomplete': bool(flagged)}

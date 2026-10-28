@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bina OCR</title>
+<style>
+  :root { --bg:#f6f6f4; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#ddd; --accent:#2f6fde; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ececea; --muted:#9a9a94; --card:#20201e; --line:#3a3a37; --accent:#6b9cf0; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, "Vazirmatn", Tahoma, sans-serif; }
+  form { max-width:360px; margin:15vh auto; padding:16px; display:grid; gap:12px; }
+  input, button { font:inherit; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); }
+  button { background:var(--accent); border-color:var(--accent); color:#fff; cursor:pointer; }
+  .warn { color:#c2410c; }
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+  <h1 style="font-size:20px;margin:0">Bina OCR</h1>
+  <label for="token">توکن دسترسی</label>
+  <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+  <button>ورود</button>
+  <p id="wrong" class="warn" role="alert" hidden>توکن اشتباه است</p>
+</form>
+<script>if (location.search.includes('wrong')) document.getElementById('wrong').hidden = false;</script>
+</body>
+</html>

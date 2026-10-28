@@ -33,7 +33,8 @@
     <button id="run" class="primary" disabled>استخراج متن</button>
     <button id="copy" disabled>کپی</button>
     <span id="status" role="status"></span>
-    <a href="/docs" style="margin-inline-start:auto;color:var(--muted)">API docs</a>
+    <a href="/admin" style="margin-inline-start:auto;color:var(--muted)">مدیریت</a>
+    <a href="/docs" style="color:var(--muted)">API docs</a>
   </div>
   <div class="grid">
     <div class="card"><img id="preview" alt=""></div>
@@ -61,6 +62,7 @@ $('run').onclick = async () => {
   $('status').textContent = 'در حال پردازش…';
   try {
     const res = await fetch('/ocr?task=' + $('task').value, { method: 'POST', body: file });
+    if (res.status === 401) return location.href = '/login';
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
     $('out').value = data.text;

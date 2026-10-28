@@ -1,0 +1,17 @@
+# Install: sudo cp deploy/bina-ocr.service /etc/systemd/system/ && sudo systemctl enable --now bina-ocr
+# Put OCR_TOKEN=... in /etc/bina-ocr.env (chmod 600). Set --host to this machine's Tailscale IP.
+[Unit]
+Description=Bina OCR server
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=alireza
+WorkingDirectory=/home/alireza/Desktop/dev/bina-0.4-koochik
+EnvironmentFile=/etc/bina-ocr.env
+ExecStart=/home/alireza/Desktop/dev/bina-0.4-koochik/run.sh --host 100.x.y.z --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

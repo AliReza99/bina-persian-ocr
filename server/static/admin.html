@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bina OCR Admin</title>
+<style>
+  :root { --bg:#f6f6f4; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#ddd; --accent:#2f6fde; --warn:#c2410c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ececea; --muted:#9a9a94; --card:#20201e; --line:#3a3a37; --accent:#6b9cf0; --warn:#fb923c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui, "Vazirmatn", Tahoma, sans-serif; }
+  main { max-width:1200px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:0; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+  button, select { font:inherit; padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:16px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .tile b { display:block; font-size:22px; }
+  .tile span { color:var(--muted); font-size:13px; }
+  .table { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:start; white-space:nowrap; }
+  th { color:var(--muted); font-weight:500; font-size:13px; }
+  td img { height:56px; display:block; border-radius:4px; }
+  .warn { color:var(--warn); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <h1>Bina OCR</h1>
+    <span id="status" role="status"></span>
+    <button id="toggle" class="primary"></button>
+    <a href="/" style="margin-inline-start:auto">آزمایش OCR</a>
+    <a href="/docs">API docs</a>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="bar">
+    <label for="sort">مرتب سازی</label>
+    <select id="sort">
+      <option value="recent">جدیدترین</option>
+      <option value="slowest">کندترین</option>
+      <option value="failed">خطا و ناقص</option>
+    </select>
+  </div>
+  <div class="table">
+    <table>
+      <thead><tr><th>#</th><th>تصویر</th><th>زمان</th><th>کلاینت</th><th>نوع</th><th>ابعاد</th><th>حجم</th><th>ثانیه</th><th>کاراکتر</th><th>وضعیت</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let state = null;
+
+const get = async url => {
+  const res = await fetch(url);
+  if (res.status === 401) location.href = '/login';
+  return res.json();
+};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const when = t => new Date(t * 1000).toLocaleString('fa-IR');
+const kb = b => (b / 1024).toFixed(0) + ' KB';
+
+async function refresh() {
+  state = await get('/admin/state');
+  const s = state.stats, run = state.running;
+  $('status').textContent = state.paused ? 'متوقف' : run ? `در حال پردازش #${run.id} (${Math.round(Date.now() / 1000 - run.started)} ثانیه)` : 'آماده';
+  $('status').className = state.paused ? 'warn' : '';
+  $('toggle').textContent = state.paused ? 'ادامه' : 'توقف';
+  const tiles = [
+    ['در صف', `${state.waiting} / ${state.max_waiting}`],
+    ['کار در ۲۴ ساعت', s.jobs_24h],
+    ['خطا / ناقص', `${s.errors_24h} / ${s.incomplete_24h}`],
+    ['میانگین ثانیه', s.avg_seconds ?? '-'],
+    ['p95 ثانیه', s.p95_seconds ?? '-'],
+    ['حافظه GPU', state.gpu ? `${state.gpu.used_mb} / ${state.gpu.total_mb} MB` : 'CPU'],
+  ];
+  $('tiles').innerHTML = tiles.map(([k, v]) => `<div class="tile"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
+}
+
+async function loadJobs() {
+  const { jobs } = await get('/admin/jobs?sort=' + $('sort').value);
+  $('rows').innerHTML = jobs.map(j => {
+    const status = j.error ? `<span class="warn" title="${esc(j.error)}">خطا</span>`
+      : j.seconds == null ? 'در جریان' : j.incomplete ? '<span class="warn">ناقص</span>' : 'موفق';
+    return `<tr><td>${j.id}</td>
+      <td><a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="تصویر کار ${j.id}" loading="lazy"></a></td>
+      <td>${when(j.created)}</td><td>${esc(j.client)}</td><td>${esc(j.task)}</td>
+      <td>${j.width}×${j.height}</td><td>${kb(j.bytes)}</td><td>${j.seconds ?? '-'}</td><td>${j.chars ?? '-'}</td><td>${status}</td></tr>`;
+  }).join('');
+}
+
+$('toggle').onclick = async () => {
+  await fetch(state.paused ? '/admin/resume' : '/admin/pause', { method: 'POST' });
+  refresh();
+};
+$('sort').onchange = loadJobs;
+
+refresh(); loadJobs();
+setInterval(refresh, 2000);
+setInterval(loadJobs, 10000);
+</script>
+</body>
+</html>

@@ -27,16 +27,23 @@ uv pip install -p .venv huggingface_hub -r model/requirements.txt
 ## Run
 
 ```sh
-./run.sh            # --host 0.0.0.0 --port 8001
+./run.sh                                       # 127.0.0.1:8001, auth off
+OCR_TOKEN=secret ./run.sh --host 100.x.y.z     # Tailscale IP; token required off localhost
 ```
 
-UI: http://127.0.0.1:8001/
+UI: http://127.0.0.1:8001/ , admin (queue, pause, job history): /admin
+
+Run as a service on boot: see `deploy/bina-ocr.service`. Job history and thumbnails live in `data/` (30 days / 5000 jobs).
 
 ## API
 
 ### `POST /ocr`
 
-Extract the text (Persian/English) from one image. Requests are processed one at a time.
+Extract the text (Persian/English) from one image. One image runs at a time; up to 3 more wait, beyond that the server answers `503 busy`.
+
+**Auth**: when the server has `OCR_TOKEN` set, send `Authorization: Bearer <token>` (all routes except `/health`, `/login`). Optional `X-Client: <name>` labels the job in the admin history.
+
+Images with a long edge over 2500 px are downscaled first; over 100 MP are rejected.
 
 **Query**
 
@@ -68,8 +75,10 @@ Extract the text (Persian/English) from one image. Requests are processed one at
 |---|---|
 | 400 | empty body, unreadable image, or bad `task` |
 | 404 | unknown path |
-| 413 | body over 30 MB |
+| 401 | missing or wrong token |
+| 413 | body over 30 MB, or image over 100 MP |
 | 500 | inference failed |
+| 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin; see `Retry-After` |
 
 **Examples**
 
@@ -91,7 +100,11 @@ const { text } = await r.json();
 
 ### `GET /health`
 
-`200 {"status": "ok", "device": "cuda", "docs": "/docs"}` (`device` is `cuda` or `cpu`).
+`200 {"status": "ok", "device": "cuda", "version": "0.5", "busy": false, "waiting": 0, "docs": "/docs"}`. `status` is `ok` or `paused`, `device` is `cuda` or `cpu`. No auth.
+
+### Admin
+
+`GET /admin/state` (paused, running job, waiting, 24h stats, GPU memory), `GET /admin/jobs?sort=recent|slowest|failed`, `GET /admin/thumb/<id>`, `POST /admin/pause`, `POST /admin/resume`. Same auth.
 
 ### `GET /docs`, `GET /llms.txt`
 
@@ -101,4 +114,4 @@ This API section, as `text/markdown`. Unknown paths return `404 {"error": "not f
 
 Web UI.
 
-No auth: keep the default `127.0.0.1` unless the network is trusted.
+Web UI (login with the token when `OCR_TOKEN` is set).
