@@ -26,7 +26,7 @@ Related: [ONNX-WebGPU-INT4](https://huggingface.co/Reza2kn/Bina-0.4-Koochik-ONNX
 ## Setup (once)
 
 ```sh
-git clone https://github.com/AliReza99/bina-0.4-koochik && cd bina-0.4-koochik
+git clone https://github.com/AliReza99/bina-persian-ocr && cd bina-persian-ocr
 uv venv -p 3.11 .venv
 uv pip install -p .venv huggingface_hub -r model/requirements.txt
 .venv/bin/hf download Reza2kn/Bina-0.4-Koochik --local-dir model
