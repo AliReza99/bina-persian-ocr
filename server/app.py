@@ -70,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         if not self.guard(path):
             return
+        if path == '/login' and not TOKEN:
+            return self.redirect('/admin')  # auth off: nothing to log into
         if path in PAGES:
             return self.send(200, (STATIC / PAGES[path]).read_bytes(), 'text/html; charset=utf-8')
         if path in ('/docs', '/llms.txt'):
