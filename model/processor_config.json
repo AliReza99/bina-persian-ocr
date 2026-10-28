@@ -1,0 +1,38 @@
+{
+  "auto_map": {
+    "AutoProcessor": "hf_nemotron_parse_processor.NemotronParseProcessor"
+  },
+  "image_processor": {
+    "auto_map": {
+      "AutoImageProcessor": "hf_nemotron_parse_processor.NemotronParseImageProcessor",
+      "AutoProcessor": "hf_nemotron_parse_processor.NemotronParseProcessor"
+    },
+    "do_normalize": true,
+    "do_rescale": true,
+    "final_size": [
+      2048,
+      1664
+    ],
+    "image_mean": [
+      0.48145466,
+      0.4578275,
+      0.40821073
+    ],
+    "image_processor_type": "NemotronParseImageProcessor",
+    "image_std": [
+      0.26862954,
+      0.26130258,
+      0.27577711
+    ],
+    "navit_coordinate_frame": "content_normalized",
+    "navit_packing": true,
+    "navit_padding_mode": "top_left_white",
+    "rescale_factor": 0.00392156862745098,
+    "target_height": 2048,
+    "target_width": 1664,
+    "virtual_canvas_height": 2048,
+    "virtual_canvas_placement": "aligned_center",
+    "virtual_canvas_width": 1664
+  },
+  "processor_class": "NemotronParseProcessor"
+}

@@ -1,0 +1,49 @@
+{
+  "source_step": 18404,
+  "runtime": "browser-webgpu",
+  "device": "Apple M2 Mac / Chrome156",
+  "image": "same authored400x104 Persian+arithmetic PNG used by native diagnostics",
+  "image_sha256": "4bdf00d9c28199eadb89a3f45475283ad0f2551a94b2854f17c43848e5b6a49f",
+  "warm_median_seconds": 2.649590000003576,
+  "warm_runs": 3,
+  "runs": [
+    {
+      "run": 1,
+      "seconds": 2.8261150000095365,
+      "tokens": 34,
+      "exact_authored_text": true,
+      "model_load_milliseconds": 0,
+      "session_creations_during_generation": 0,
+      "resident_sessions": 4,
+      "total_session_creations": 4,
+      "tracked_live_request_tensors": 0
+    },
+    {
+      "run": 2,
+      "seconds": 2.5946899999976156,
+      "tokens": 34,
+      "exact_authored_text": true,
+      "model_load_milliseconds": 0,
+      "session_creations_during_generation": 0,
+      "resident_sessions": 4,
+      "total_session_creations": 4,
+      "tracked_live_request_tensors": 0
+    },
+    {
+      "run": 3,
+      "seconds": 2.649590000003576,
+      "tokens": 34,
+      "exact_authored_text": true,
+      "model_load_milliseconds": 0,
+      "session_creations_during_generation": 0,
+      "resident_sessions": 4,
+      "total_session_creations": 4,
+      "tracked_live_request_tensors": 0
+    }
+  ],
+  "one_active_inference_process": true,
+  "other_desktop_apps_present": true,
+  "trimmed_package_fresh_worker_load_verified": true,
+  "scope": "Short34-token latency diagnostic, not corpus throughput or mobile benchmarking",
+  "main_training_changes": false
+}

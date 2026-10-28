@@ -1,0 +1,54 @@
+{
+  "source_step": 18404,
+  "candidate_sha256": "8b702a444a2ff70d478f4bd06875f19ec7fed2b6084d16013f1cf41c4ac7e469",
+  "quantized_codes_or_scales_changed": false,
+  "components": [
+    {
+      "component": "vision",
+      "tied_weight_rewrites": [],
+      "ORT_control_max_abs_errors": [
+        0.0,
+        0.0
+      ],
+      "model_bytes": 363381,
+      "external_bytes": 259413696
+    },
+    {
+      "component": "neck",
+      "tied_weight_rewrites": [],
+      "ORT_control_max_abs_errors": [
+        0.0
+      ],
+      "model_bytes": 3941,
+      "external_bytes": 23003136
+    },
+    {
+      "component": "prefill",
+      "tied_weight_rewrites": [
+        "/lm_head/MatMul"
+      ],
+      "ORT_control_max_abs_errors": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "model_bytes": 144191,
+      "external_bytes": 369606656
+    },
+    {
+      "component": "decode",
+      "tied_weight_rewrites": [
+        "/lm_head/MatMul"
+      ],
+      "ORT_control_max_abs_errors": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "model_bytes": 147690,
+      "external_bytes": 369606656
+    }
+  ],
+  "actual_browser_test": false,
+  "transcription_parity_qualified": false
+}

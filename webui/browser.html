@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090708">
+  <meta name="description" content="متن فارسی را با بینا ۰.۴ در مرورگر بخوانید. پردازش روی دستگاه شما انجام می‌شود و تصویر جایی فرستاده نمی‌شود.">
+  <title>خواندن متن فارسی در مرورگر | بینا ۰.۴</title>
+  <link rel="preload" href="/fonts/Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="https://persianvlm.com/ocr" target="_blank" rel="noopener">PersianVLM / بینا</a>
+    <a class="review-link" href="https://huggingface.co/Reza2kn/Bina-0.4-Koochik" target="_blank" rel="noopener">دربارهٔ مدل</a>
+  </header>
+  <section class="scratchpad panel intro" aria-labelledby="intro-title">
+    <div class="scratch-head">
+      <div>
+        <p class="eyebrow">BINA 0.4 KOOCHIK · OCR در مرورگر</p>
+        <h1 id="intro-title">تصویر بدهید. بینا همین‌جا می‌خواند.</h1>
+        <p class="scratch-copy">متن فارسی را از تصویر بخوانید؛ پردازش روی دستگاه شماست و تصویر به هیچ سروری فرستاده نمی‌شود.</p>
+      </div>
+      <a class="model-chip" href="https://huggingface.co/Reza2kn/Bina-0.4-Koochik-ONNX-WebGPU-INT4" target="_blank" rel="noopener" dir="ltr">Bina 0.4 Koochik / INT4</a>
+    </div>
+  </section>
+  <p class="standalone" id="standalone" hidden>می‌توانید ابزار را در صفحه‌ای جدا باز کنید؛ <a id="standalone-link" href="/" target="_blank" rel="noopener">نسخهٔ مستقل را باز کنید</a>.</p>
+  <div class="notice error" id="error" role="alert" hidden></div>
+  <section class="workspace" aria-label="ابزار خواندن متن">
+    <div class="panel upload-panel">
+      <h2 class="panel-title">تصویر شما</h2>
+      <label class="dropzone" id="dropzone" for="file">
+        <strong>تصویر را انتخاب کنید</strong>
+        <span>یا فایل را اینجا رها کنید</span>
+        <span>PNG، JPG یا WebP، حداکثر ۲۵ مگابایت</span>
+        <input class="file-input" id="file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="انتخاب تصویر برای خواندن متن">
+      </label>
+      <div class="selection-tools">
+        <p class="chosen" id="chosen">تصویر نمونه برای آزمایش آماده است.</p>
+        <button type="button" class="text-button" id="demo">استفاده از نمونه</button>
+      </div>
+      <div class="preview-wrap"><img id="preview" src="/examples/demo.png" alt="پیش‌نمایش تصویر نمونه با متن فارسی و یک جمع ساده"></div>
+      <div class="control-row">
+        <button class="primary" type="button" id="run" disabled>خواندن متن در مرورگر</button>
+        <button class="tool-button" type="button" id="stop" hidden>توقف</button>
+      </div>
+      <div class="runtime-box" role="region" aria-label="وضعیت اجرا">
+        <div role="status" aria-live="polite" aria-atomic="true">
+          <strong id="status">در حال بررسی مرورگر…</strong>
+          <p id="status-detail">مدل پس از انتخاب «خواندن متن» بارگیری می‌شود.</p>
+        </div>
+        <div class="progress-row" id="download-row" hidden>
+          <div class="progress-head"><span>دریافت فایل‌های مدل</span><output id="download-percent" dir="ltr" aria-live="off">۰٪</output></div>
+          <progress id="download-progress" max="100" value="0" aria-label="درصد دریافت فایل‌های مدل"></progress>
+          <p id="download-bytes"></p>
+        </div>
+        <div class="progress-row" id="inference-row" hidden>
+          <div class="progress-head"><span>پردازش تصویر <small>(تخمینی)</small></span><output id="inference-percent" dir="ltr" aria-live="off">۰٪</output></div>
+          <progress id="inference-progress" max="100" value="0" aria-label="درصد تخمینی پردازش تصویر"></progress>
+          <p id="inference-caption"></p>
+          <p class="progress-note">درصد پردازش تخمینی است؛ طول متن از پیش مشخص نیست.</p>
+        </div>
+      </div>
+      <p class="privacy">در نخستین استفاده حدود ۷۷۰ مگابایت مدل دریافت می‌شود. پس از بارگیری، مدل برای تصویرهای بعدی آماده می‌ماند. تصویر و متن شما ذخیره یا ارسال نمی‌شود.</p>
+      <p class="gpu-state" id="gpu-state">WebGPU</p>
+    </div>
+    <div class="panel result-panel" aria-labelledby="result-title">
+      <div class="result-head">
+        <h2 class="panel-title" id="result-title">متن استخراج‌شده</h2>
+        <div class="result-tools">
+          <button type="button" class="tool-button" id="copy" disabled>کپی متن</button>
+          <button type="button" class="tool-button" id="save-text" disabled>دریافت متن</button>
+        </div>
+      </div>
+      <div class="empty" id="empty">
+        <div><strong>نتیجه اینجا نمایش داده می‌شود</strong><p>تصویر را انتخاب کنید و خواندن متن را بزنید.</p><p>متن را می‌توانید بخوانید، ویرایش کنید یا کپی کنید.</p></div>
+      </div>
+      <label class="file-input" for="output">متن خوانده‌شده، قابل ویرایش</label>
+      <textarea id="output" class="ocr-text" dir="auto" spellcheck="false" hidden></textarea>
+      <p class="limit-warning" id="quality-warning" hidden>این خروجی به محدودیت طول رسیده یا نشانهٔ تکرار دارد. ممکن است ناقص باشد؛ پیش از استفاده آن را بررسی کنید.</p>
+      <p class="result-meta" id="result-meta" aria-live="polite"></p>
+    </div>
+  </section>
+  <details class="advanced" id="advanced">
+    <summary>اطلاعات مدل و اجرای محلی</summary>
+    <p>این نسخه از بینا ۰.۴ کوچیک، با وزن‌های خطی ۴ بیتی و چک‌پوینت ۱۸٬۴۰۴ اجرا می‌شود. به مرورگر دارای WebGPU نیاز دارد؛ Chrome یا Edge به‌روز روی رایانه پیشنهاد می‌شود. سرعت و ظرفیت حافظه به دستگاه شما بستگی دارد.</p>
+    <p>فرمت‌های JPG و WebP در همین دستگاه به PNG تبدیل می‌شوند. هر ناحیه حداکثر ۲٬۰۴۸ توکن تولید می‌کند. سقف تصویر ۲۰ میلیون پیکسل است. PDF در این نسخه پشتیبانی نمی‌شود.</p>
+    <p>همین وزن‌ها و موتور WebGPU در ارزیابی ۶۴ تصویر، ۹۸٫۸۶٪ توافق نویسه‌ای با مرجع فشرده‌نشدهٔ اصلاح‌شده داشتند. این عدد تضمین دقت برای هر تصویر نیست. <a href="/qualification.json" target="_blank" rel="noopener">جزئیات ارزیابی</a></p>
+    <div class="advanced-controls">
+      <button type="button" class="tool-button" id="unload" disabled>آزادکردن حافظهٔ مدل</button>
+      <a id="download" hidden>دریافت گزارش کامل اجرا</a>
+    </div>
+    <p>«توقف» پردازش جاری را متوقف می‌کند و مدل بارگیری‌شده را نگه می‌دارد. آزادکردن حافظه، مدل را از مرورگر خارج می‌کند.</p>
+    <pre id="metrics" dir="ltr">هنوز اجرایی انجام نشده است.</pre>
+  </details>
+  <footer class="footer">
+    <span>بدون حساب کاربری، بدون ارسال تصویر، بدون جمع‌آوری داده</span>
+    <span><a href="https://huggingface.co/Reza2kn/Bina-0.4-Koochik-ONNX-WebGPU-INT4" target="_blank" rel="noopener">وزن‌ها و کد مدل</a> / <a href="/LICENSE" target="_blank" rel="noopener">مجوز مدل</a></span>
+  </footer>
+  <noscript><p class="notice error">برای اجرای مدل در دستگاه شما، جاوااسکریپت مرورگر باید فعال باشد.</p></noscript>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

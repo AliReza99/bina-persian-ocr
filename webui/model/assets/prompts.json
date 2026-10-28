@@ -1,0 +1,13 @@
+{
+  "</s><s><predict_text_in_pic>": [
+    2,
+    0,
+    50009
+  ],
+  "</s><s><output_markdown><predict_text_in_pic>": [
+    2,
+    0,
+    50001,
+    50009
+  ]
+}

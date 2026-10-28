@@ -1,0 +1,14 @@
+{
+  "base_package": "onnxruntime-web",
+  "version": "1.31.1",
+  "source": "official npm package; MIT-licensed source copied into this experiment",
+  "original_matmulnbits_sha256": "5e77c2d767e50f407df51b5497efff55475038ace7525d213889f870f69a25fa",
+  "patched_matmulnbits_sha256": "ac6569666c22d4b473e43fcf8378aa613154bca5d67e8fb349eeb2e1cf354b0f",
+  "bundle_sha256": "6513d64ef40a4ddf3a27717895e5a11a01e71e444ac77f7a2f20d83db5c15ddc",
+  "changes": "JSEP build instead of native EP; BF16 round-to-nearest-even on unpacked finite FP32 INT4 dequantized weights before FP32 dot products; identical original model codes and scales",
+  "runtime_reused_without_model_weights": true,
+  "new_source_step_qualification": 18404,
+  "new_qualification_location": "../../qualification.json",
+  "new_synthetic_controls": "../../validation/component-controls.json",
+  "old_checkpoint_measurements_not_reused_as_new_results": true
+}

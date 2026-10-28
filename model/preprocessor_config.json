@@ -1,0 +1,31 @@
+{
+  "feature_extractor_type": "NemotronParseImageProcessor",
+  "image_processor_type": "NemotronParseImageProcessor",
+  "processor_class": "NemotronParseProcessor",
+  "size": {
+    "height": 2048,
+    "width": 1664,
+    "longest_edge": [
+      2048,
+      1664
+    ]
+  },
+  "final_size": [
+    2048,
+    1664
+  ],
+  "do_normalize": true,
+  "navit_packing": true,
+  "navit_padding_mode": "top_left_white",
+  "navit_coordinate_frame": "content_normalized",
+  "image_mean": [
+    0.48145466,
+    0.4578275,
+    0.40821073
+  ],
+  "image_std": [
+    0.26862954,
+    0.26130258,
+    0.27577711
+  ]
+}

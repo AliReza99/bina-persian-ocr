@@ -1,0 +1,16 @@
+{
+  "source_step": 18404,
+  "query_chunk": 128,
+  "vision_blocks": 27,
+  "all_keys_preserved": true,
+  "weights_scales_and_input_resolution_changed": false,
+  "ORT_control_max_abs_errors": [
+    0.0,
+    0.0
+  ],
+  "ORT_control_relative_errors": [
+    0.0,
+    0.0
+  ],
+  "actual_browser_test": false
+}

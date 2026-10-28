@@ -1,0 +1,34 @@
+{
+  "source_step": 18404,
+  "candidate_sha256": "8b702a444a2ff70d478f4bd06875f19ec7fed2b6084d16013f1cf41c4ac7e469",
+  "models": {
+    "vision": {
+      "model": "vision.bounded.int4.onnx",
+      "external": "vision.int4.onnx.data",
+      "model_sha256": "294b1c3e53a960a2ffc3dee0a65e86c648a9dab04d2d4f1ff82ead97c8442545",
+      "external_sha256": "1398dcad4bc606faf546f86c948750ad327f7f7422121d2d108fc8ae7da0a03a"
+    },
+    "neck": {
+      "model": "neck.int4.onnx",
+      "external": "neck.int4.onnx.data",
+      "model_sha256": "2f5512c7d9dd56c58c0e0cd9849905f27b78c926a5923390992d1c349472cc8b",
+      "external_sha256": "2479030719fefb30865298b21652c822c2f9d8d9437fd09902f92575eadff247"
+    },
+    "prefill": {
+      "model": "prefill.int4.onnx",
+      "external": "decoder.int4.onnx.data",
+      "model_sha256": "16bf81ea849213fab9ff41a7dcc86c88412c2b0c2c03e02946c191c50ea6a1f2",
+      "external_sha256": "b6256ce14eca54e514b9a3e4abcc892e898f8a7ac61fa877e69148419623ea49"
+    },
+    "decode": {
+      "model": "decode.int4.onnx",
+      "external": "decoder.int4.onnx.data",
+      "model_sha256": "fd7774f150816e322f3acc450048727d48807dc2c703e0647dad7a8cd38d40fa",
+      "external_sha256": "b6256ce14eca54e514b9a3e4abcc892e898f8a7ac61fa877e69148419623ea49"
+    }
+  },
+  "tensor_values_changed": false,
+  "shared_decoder_data_verified_identical": true,
+  "total_model_bytes": 652682916,
+  "compute_precision": "INT4group32 codes, BF16 RNE dequantized weights, FP32 arithmetic"
+}

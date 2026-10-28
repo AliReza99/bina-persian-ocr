@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+*.safetensors
+*.onnx.data
+webui/model/assets/position-field.npy

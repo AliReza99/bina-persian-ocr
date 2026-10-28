@@ -1,0 +1,12 @@
+{
+  "source_step": 18404,
+  "runtime": "cpu",
+  "dtype": "torch.float32",
+  "parameters": 630800496,
+  "image_sha256": "4bdf00d9c28199eadb89a3f45475283ad0f2551a94b2854f17c43848e5b6a49f",
+  "ocr_prediction": "این یک متن آزمایشی است.\n123 + 456 = 579",
+  "capped_regions": 0,
+  "flagged_regions": 0,
+  "natural_EOS_regions": 1,
+  "main_training_changes": false
+}
