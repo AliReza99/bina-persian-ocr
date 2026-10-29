@@ -5,3 +5,4 @@ transformers==5.14.1
 tokenizers==0.22.2
 numpy==2.4.6
 Pillow==13.0.0
+rapidocr==3.4.2  # /v2/ocr line detector (needs onnxruntime, already pulled in)

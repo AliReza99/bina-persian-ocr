@@ -40,7 +40,10 @@ git clone https://github.com/AliReza99/bina-persian-ocr && cd bina-persian-ocr
 uv venv -p 3.11 .venv
 uv pip install -p .venv huggingface_hub -r model/requirements.txt
 .venv/bin/hf download Reza2kn/Bina-0.4-Koochik model.safetensors --local-dir model
+sudo apt install tesseract-ocr tesseract-ocr-fas   # for /v2/ocr line boxes
 ```
+
+The line detector models for `/v2/ocr` (PP-OCRv5, a few MB) download on the first start.
 
 ## Run
 
@@ -127,6 +130,34 @@ const r = await fetch('http://127.0.0.1:8001/ocr', { method: 'POST', body: file 
 const { text } = await r.json();
 ```
 
+### `POST /v2/ocr`
+
+Same as `/ocr` (request, auth, queue, errors), plus where each text line sits on the image. Use it to draw or select lines on the photo. `/ocr` stays as it is.
+
+**Response 200**
+
+```json
+{
+  "text": "در باب اعتماد به نفس\nیکی از جالب‌ترین آثاری که ...",
+  "incomplete": false,
+  "seconds": 3.2,
+  "lines": [
+    { "line": 0, "box": [[0.34, 0.05], [0.53, 0.05], [0.53, 0.07], [0.34, 0.07]], "guess": false }
+  ],
+  "align_seconds": 1.8
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `lines` | array | one item per located line, in text order; lines with no box are left out |
+| `lines[].line` | int | index into `text.split('\n')` (blank lines count) |
+| `lines[].box` | 4 × `[x, y]` | corners as fractions (0..1) of the image width and height, starting top-left, clockwise; a quad, so tilted lines fit |
+| `lines[].guess` | bool | `true` when the box was inferred from the lines around it rather than matched directly |
+| `align_seconds` | number | time to locate the lines (CPU), after `seconds` of inference |
+
+Locating lines never fails the request: if it breaks, `lines` is `[]`. The text is always the model's; the boxes only say where it is. On a typical page about 85% of lines get a box; most of the rest are fragments with nothing to point at.
+
 ### `GET /health`
 
 `200 {"status": "ok", "device": "cuda", "version": "0.5", "busy": false, "waiting": 0, "docs": "/docs"}`. `status` is `ok` or `paused`, `device` is `cuda` or `cpu`. No auth.
@@ -142,7 +173,7 @@ Same auth as `/ocr`. Used by the `/admin` page.
 | `GET /admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `task`, `id`, `offset`, `limit` (default 50, max 200) |
 | `GET /admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
 | `GET /admin/thumb/<id>` | JPEG thumbnail |
-| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` |
+| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` and `/v2/ocr` |
 | `POST /admin/clear` | deletes all job history |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.

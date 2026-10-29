@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from PIL import Image
 
-import jobs, monitor, ocr
+import align, jobs, monitor, ocr
 
 VERSION = '0.5'
 STATIC = pathlib.Path(__file__).resolve().parent / 'static'
@@ -135,11 +135,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
-        if url.path == '/ocr':
-            return self.ocr(url)
+        if url.path in ('/ocr', '/v2/ocr'):
+            return self.ocr(url, v2=url.path == '/v2/ocr')
         self.reply(404, NOT_FOUND)
 
-    def ocr(self, url):
+    def ocr(self, url, v2=False):
         task = parse_qs(url.query).get('task', ['ocr'])[0]
         if task not in ocr.PROMPTS:
             return self.reply(400, {'error': f'task must be one of {list(ocr.PROMPTS)}'})
@@ -161,11 +161,11 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:
-            self.run_job(task, image, size)
+            self.run_job(task, image, size, v2)
         finally:
             jobs.release()
 
-    def run_job(self, task, image, size):
+    def run_job(self, task, image, size, v2=False):
         client = self.headers.get('X-Client') or self.client_address[0]
         job_id = jobs.start(client, task, image, size)
         tick = [time.monotonic()]
@@ -183,7 +183,17 @@ class Handler(BaseHTTPRequestHandler):
             jobs.set_running(None)
         seconds = round(time.monotonic() - tick[0], 2)
         jobs.finish(job_id, seconds, result)
-        self.reply(200, {**result, 'seconds': seconds})
+        extra = {}
+        if v2:
+            # after the model lock is released, so the next page reads on the GPU meanwhile
+            started = time.monotonic()
+            try:
+                extra['lines'] = align.lines(image, result['text'])
+            except Exception as e:  # boxes are extra: never fail a page that was read
+                print(f'align failed on job {job_id}: {e!r}', file=sys.stderr, flush=True)
+                extra['lines'] = []
+            extra['align_seconds'] = round(time.monotonic() - started, 2)
+        self.reply(200, {**result, 'seconds': seconds, **extra})
 
 
 if __name__ == '__main__':
