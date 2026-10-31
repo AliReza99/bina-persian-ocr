@@ -22,6 +22,7 @@ if 'ip' not in _cols:  # added with client tokens
 # Only a hash is kept: a token is shown once, when it's made.
 _db.execute('''CREATE TABLE IF NOT EXISTS tokens (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE, hash TEXT UNIQUE, created REAL, last_used REAL, last_ip TEXT)''')
+_db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value)')
 _db.commit()
 _db_lock = threading.Lock()
 
@@ -29,6 +30,9 @@ _state_lock = threading.Lock()
 paused = False
 in_flight = 0  # running + waiting
 running = None  # {'id', 'client', 'started'} of the job holding the model
+MAX_SECONDS_RANGE = (5, 3600)
+_row = _db.execute("SELECT value FROM settings WHERE key='max_seconds'").fetchone()
+max_seconds = _row and _row[0]  # inference time limit per job; None: no limit
 
 
 class Rejected(Exception):
@@ -58,6 +62,15 @@ def release():
 def set_paused(value):
     global paused
     paused = value
+
+
+def set_max_seconds(value):
+    """value: whole seconds in MAX_SECONDS_RANGE, or None for no limit. Kept across restarts."""
+    global max_seconds
+    with _db_lock:
+        _db.execute("INSERT OR REPLACE INTO settings VALUES ('max_seconds', ?)", (value,))
+        _db.commit()
+    max_seconds = value
 
 
 def set_running(job):
@@ -194,7 +207,8 @@ def stats():
 def state():
     with _state_lock:
         waiting = max(0, in_flight - (1 if running else 0))
-        return {'paused': paused, 'running': running, 'waiting': waiting, 'max_waiting': MAX_WAITING}
+        return {'paused': paused, 'running': running, 'waiting': waiting, 'max_waiting': MAX_WAITING,
+                'max_seconds': max_seconds}
 
 
 def _hash(token):

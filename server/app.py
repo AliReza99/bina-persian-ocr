@@ -126,6 +126,17 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ('/admin/pause', '/admin/resume'):
             jobs.set_paused(url.path == '/admin/pause')
             return self.reply(200, jobs.state())
+        if url.path == '/admin/limit':
+            _, raw = self.body(4096)
+            try:
+                value = json.loads(raw or b'{}').get('max_seconds')
+            except (ValueError, AttributeError):
+                value = 'bad'
+            lo, hi = jobs.MAX_SECONDS_RANGE
+            if value is not None and not (type(value) is int and lo <= value <= hi):
+                return self.reply(400, {'error': f'send {{"max_seconds": n}}, n whole seconds {lo} to {hi}, or null for no limit'})
+            jobs.set_max_seconds(value)
+            return self.reply(200, jobs.state())
         if url.path == '/admin/tokens':
             _, raw = self.body(4096)
             try:
@@ -189,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
             jobs.set_running({'id': job_id, 'client': client, 'started': time.time()})
 
         try:
-            result = ocr.transcribe(image, task, on_start)
+            result = ocr.transcribe(image, task, on_start, jobs.max_seconds)
         except Exception as e:
             jobs.finish(job_id, round(time.monotonic() - tick[0], 2), error=repr(e))
             return self.reply(500, {'error': repr(e)})

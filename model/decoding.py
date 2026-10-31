@@ -3,7 +3,7 @@
 Keep native prompts, decoding and per-attempt cap. Preserve all attempts; never
 trim an output to conceal looping. A remaining loop is an explicit failure.
 """
-import collections, copy, hashlib, json
+import collections, copy, hashlib, json, time
 from PIL import Image
 import torch
 
@@ -39,10 +39,12 @@ def generate_repaired(model,proc,original,prompt,generation_config):
  """Return selected attempt and raw evidence. Caller applies native scoring."""
  assert not model.training
  assert model.device.type in ('cpu','cuda')
- image=resize_primary(original);attempts=[]
+ image=resize_primary(original);attempts=[];started=time.monotonic()
  def attempt(image,reason):
   inp=proc(images=[image],text=prompt,return_tensors='pt',add_special_tokens=False).to(model.device)
-  with torch.inference_mode():out=model.generate(**inp,generation_config=copy.deepcopy(generation_config))
+  cfg=copy.deepcopy(generation_config)
+  if cfg.max_time:cfg.max_time=max(.01,cfg.max_time-(time.monotonic()-started))  # max_time spans all attempts, not each
+  with torch.inference_mode():out=model.generate(**inp,generation_config=cfg)
   ids=out[0,inp['input_ids'].shape[1]:].tolist()
   plain=proc.tokenizer.decode(ids,skip_special_tokens=True).strip()
   body=proc.tokenizer.decode(ids,skip_special_tokens=False)

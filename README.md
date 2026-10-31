@@ -63,6 +63,7 @@ Tested on Linux. On other systems the process RAM card shows `-`.
 - **Trends** (1h / 24h / 7d): jobs per bucket, latency, seconds vs image size, top clients, task split.
 - **Jobs**: filter by status, client, task or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
 - **Pause / Resume**: pause rejects new `/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
+- **Time limit**: the longest one job may use the model (5 to 3600 s), or no limit. Past it the text read so far comes back with `incomplete: true` and the model is freed for the next job. Kept across restarts.
 - **Clear history** (footer, click twice): deletes all jobs, thumbnails and stored text.
 
 Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails and extracted text live in `data/` (30 days / 5000 jobs). Anyone with admin access can read the stored text.
@@ -98,7 +99,7 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | Field | Type | Meaning |
 |---|---|---|
 | `text` | string | transcript, lines separated by `\n` |
-| `incomplete` | bool | `true` if some region still hit a repetition loop after splitting; part of the text may be missing |
+| `incomplete` | bool | `true` if some region still hit a repetition loop after splitting, or the admin time limit ran out; part of the text may be missing |
 | `seconds` | number | inference time |
 
 **Errors** (all `{"error": "<message>"}`)
@@ -173,12 +174,13 @@ From the Bina machine only, no token. Used by the `/admin` page.
 
 | Route | Returns |
 |---|---|
-| `GET /admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `stats` (last 24h: `jobs_24h`, `errors_24h`, `incomplete_24h`, `busy_24h`, `success_pct`, `avg_seconds`, `p95_seconds`), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
+| `GET /admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `max_seconds` (null: no limit), `stats` (last 24h: `jobs_24h`, `errors_24h`, `incomplete_24h`, `busy_24h`, `success_pct`, `avg_seconds`, `p95_seconds`), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
 | `GET /admin/series?range=1h\|24h\|7d` | per bucket `t`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`; plus `scatter` (`[megapixels, seconds]`), `clients` and `tasks` (`[name, count]`) |
 | `GET /admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `task`, `id`, `offset`, `limit` (default 50, max 200) |
 | `GET /admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
 | `GET /admin/thumb/<id>` | JPEG thumbnail |
 | `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` and `/v2/ocr` |
+| `POST /admin/limit` | `{"max_seconds": n}` (whole seconds, 5 to 3600) or `{"max_seconds": null}` for no limit |
 | `POST /admin/clear` | deletes all job history |
 | `GET /admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
 | `POST /admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |

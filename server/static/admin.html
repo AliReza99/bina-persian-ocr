@@ -48,6 +48,18 @@
   .donut > div:first-child { width:120px; height:120px; border-radius:50%; flex:none;
     -webkit-mask:radial-gradient(circle, transparent 52%, #000 53%); mask:radial-gradient(circle, transparent 52%, #000 53%); }
   .dot { display:inline-block; width:10px; height:10px; border-radius:3px; margin-inline-end:6px; }
+  header .meta { margin-inline-start:auto; color:var(--muted); display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .controls { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap:12px; }
+  .control { display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  .control .v { font-size:18px; }
+  .control p { margin:2px 0 0; color:var(--muted); font-size:12px; }
+  .control .act { display:flex; gap:8px; align-items:center; }
+  .unit { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+  .unit:focus-within { border-color:var(--accent); }
+  .unit input { border:0; width:96px; background:none; outline:none; }
+  .unit span { padding-inline-end:12px; color:var(--muted); }
+  button.ghost { border-color:transparent; background:none; color:var(--muted); }
+  button.ghost:hover { color:var(--fg); }
   .filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
   .filters input { width:110px; }
   .table { overflow-x:auto; padding:0; }
@@ -77,11 +89,25 @@
   <header>
     <h1>Bina OCR</h1>
     <span id="status" class="badge" role="status"></span>
-    <button id="toggle" class="primary"></button>
-    <span id="server" style="color:var(--muted)"></span>
-    <a href="/" style="margin-inline-start:auto">Test OCR</a>
-    <a href="/docs">API docs</a>
+    <div class="meta"><span id="server"></span><a href="/">Test OCR</a><a href="/docs">API docs</a></div>
   </header>
+
+  <h2>Controls</h2>
+  <div class="controls">
+    <div class="card control">
+      <div><div class="k">Requests</div><div class="v" id="c-intake"></div>
+        <p>When paused, new requests get 503; running and queued jobs still finish.</p></div>
+      <div class="act"><button id="toggle" class="primary"></button></div>
+    </div>
+    <form id="limit" class="card control">
+      <div><div class="k">Time limit per job</div><div class="v" id="c-limit"></div>
+        <p>Past it, the text read so far comes back as incomplete.</p></div>
+      <div class="act">
+        <label class="unit"><input id="l-sec" type="number" min="5" max="3600" step="1" required placeholder="e.g. 90" aria-label="Time limit in seconds"><span>s</span></label>
+        <button>Set</button><button id="l-off" type="button" class="ghost">Remove</button>
+      </div>
+    </form>
+  </div>
 
   <h2>Live, while this page is open (up to 10 minutes)</h2>
   <div class="grid" id="live"></div>
@@ -196,6 +222,9 @@ async function refresh() {
   $('status').textContent = state.paused ? 'Paused' : run ? `Processing #${run.id} · ${Math.round(Date.now() / 1000 - run.started)}s` : 'Ready';
   $('status').className = 'badge ' + (state.paused ? 'paused' : run ? 'busy' : '');
   $('toggle').textContent = state.paused ? 'Resume' : 'Pause';
+  $('c-intake').textContent = state.paused ? 'Paused' : 'Accepting';
+  $('c-limit').textContent = state.max_seconds ? `${state.max_seconds} s` : 'No limit';
+  $('l-off').hidden = !state.max_seconds;
   $('server').textContent = `v${state.version} · ${state.device} · up ${dur(state.uptime)}`;
   const col = k => smp.map(s => s[k]), acc = css('--accent'), s2 = css('--s2');
   const live = [card('Queue', `${state.waiting} <small>/ ${state.max_waiting} waiting</small>`,
@@ -327,6 +356,16 @@ $('toggle').onclick = async () => {
   await fetch(state.paused ? '/admin/resume' : '/admin/pause', { method: 'POST' });
   refresh();
 };
+
+async function setLimit(max_seconds) {
+  const res = await fetch('/admin/limit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_seconds }) });
+  if (!res.ok) return alert((await res.json()).error);
+  $('l-sec').value = '';
+  refresh();
+}
+$('limit').onsubmit = e => { e.preventDefault(); setLimit(Number($('l-sec').value)); };
+$('l-off').onclick = () => setLimit(null);
 
 // two-step confirm instead of a blocking dialog
 let armed = null;
