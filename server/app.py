@@ -26,7 +26,8 @@ DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
 # everything else is admin: this machine only, no login
 LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
 PAGES = {'/': 'index.html', '/admin': 'admin.html'}
-VENDOR = {'/vendor/uPlot.iife.min.js': 'text/javascript', '/vendor/uPlot.min.css': 'text/css'}
+ASSET_DIRS = ('vendor', 'js', 'css')  # served from static/, admin-guarded like the pages
+ASSET_TYPES = {'.js': 'text/javascript', '.css': 'text/css'}
 
 
 def gpu_mem():
@@ -88,8 +89,11 @@ class Handler(BaseHTTPRequestHandler):
                                     'waiting': s['waiting'], 'docs': '/docs'})
         if path == '/whoami':  # lets a client check its token without sending a page
             return self.reply(200, {'name': self.who})
-        if path in VENDOR:
-            return self.send(200, (STATIC / path[1:]).read_bytes(), VENDOR[path], [('Cache-Control', 'max-age=86400')])
+        asset = (STATIC / path[1:]).resolve()
+        if path.split('/')[1] in ASSET_DIRS and asset.is_relative_to(STATIC) and asset.suffix in ASSET_TYPES and asset.is_file():
+            # vendor files never change; our own code must not go stale after an edit
+            cache = 'max-age=86400' if path.startswith('/vendor/') else 'no-cache'
+            return self.send(200, asset.read_bytes(), ASSET_TYPES[asset.suffix], [('Cache-Control', cache)])
         if path == '/admin/state':
             return self.reply(200, {**jobs.state(), 'stats': jobs.stats(), 'version': VERSION, 'device': ocr.device,
                                     'uptime': round(time.time() - monitor.started), 'samples': monitor.poll(gpu_mem if ocr.device == 'cuda' else None)})
