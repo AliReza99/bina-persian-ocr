@@ -1,5 +1,5 @@
-"""Admission control (pause, bounded wait) and SQLite job history with thumbnails."""
-import collections, pathlib, sqlite3, threading, time
+"""Admission control (pause, bounded wait), SQLite job history with thumbnails, and client tokens."""
+import collections, hashlib, pathlib, secrets, sqlite3, threading, time
 
 DATA = pathlib.Path(__file__).resolve().parent.parent / 'data'
 THUMBS = DATA / 'thumbs'
@@ -14,8 +14,14 @@ _db.execute('''CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY, created REAL, client TEXT, task TEXT, width INTEGER, height INTEGER,
   bytes INTEGER, seconds REAL, incomplete INTEGER, chars INTEGER, error TEXT)''')
 _db.execute('CREATE TABLE IF NOT EXISTS rejects (created REAL, reason TEXT)')
-if 'text' not in [c[1] for c in _db.execute('PRAGMA table_info(jobs)')]:  # added after the first release
+_cols = [c[1] for c in _db.execute('PRAGMA table_info(jobs)')]
+if 'text' not in _cols:  # added after the first release
     _db.execute('ALTER TABLE jobs ADD COLUMN text TEXT')
+if 'ip' not in _cols:  # added with client tokens
+    _db.execute('ALTER TABLE jobs ADD COLUMN ip TEXT')
+# Only a hash is kept: a token is shown once, when it's made.
+_db.execute('''CREATE TABLE IF NOT EXISTS tokens (
+  id INTEGER PRIMARY KEY, name TEXT UNIQUE, hash TEXT UNIQUE, created REAL, last_used REAL, last_ip TEXT)''')
 _db.commit()
 _db_lock = threading.Lock()
 
@@ -59,11 +65,11 @@ def set_running(job):
     running = job
 
 
-def start(client, task, image, size):
+def start(client, ip, task, image, size):
     """Record a job row and its thumbnail; returns the job id."""
     with _db_lock:
-        cur = _db.execute('INSERT INTO jobs (created, client, task, width, height, bytes) VALUES (?,?,?,?,?,?)',
-                          (time.time(), client, task, image.width, image.height, size))
+        cur = _db.execute('INSERT INTO jobs (created, client, ip, task, width, height, bytes) VALUES (?,?,?,?,?,?,?)',
+                          (time.time(), client, ip, task, image.width, image.height, size))
         _db.commit()
         job_id = cur.lastrowid
     thumb = image.copy()
@@ -189,3 +195,41 @@ def state():
     with _state_lock:
         waiting = max(0, in_flight - (1 if running else 0))
         return {'paused': paused, 'running': running, 'waiting': waiting, 'max_waiting': MAX_WAITING}
+
+
+def _hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()  # tokens are random 256-bit, so no salt or slow hash needed
+
+
+def create_token(name):
+    """New client token named `name`; returns it in plain, the only time it's available. Raises ValueError if the name is taken."""
+    token = 'bina_' + secrets.token_urlsafe(32)
+    with _db_lock:
+        try:
+            _db.execute('INSERT INTO tokens (name, hash, created) VALUES (?,?,?)', (name, _hash(token), time.time()))
+        except sqlite3.IntegrityError:
+            raise ValueError(f'a token named {name!r} already exists')
+        _db.commit()
+    return token
+
+
+def token_client(token, ip):
+    """Name of the client token `token`, noting this use; None if no such token."""
+    with _db_lock:
+        row = _db.execute('SELECT id, name FROM tokens WHERE hash = ?', (_hash(token),)).fetchone()
+        if not row:
+            return None
+        _db.execute('UPDATE tokens SET last_used = ?, last_ip = ? WHERE id = ?', (time.time(), ip, row['id']))
+        _db.commit()
+    return row['name']
+
+
+def tokens():
+    with _db_lock:
+        return [dict(r) for r in _db.execute('SELECT id, name, created, last_used, last_ip FROM tokens ORDER BY id')]
+
+
+def revoke_token(token_id):
+    with _db_lock:
+        _db.execute('DELETE FROM tokens WHERE id = ?', (token_id,))
+        _db.commit()

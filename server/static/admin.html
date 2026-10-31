@@ -125,6 +125,23 @@
     <div class="pager"><span id="page-info"></span><button id="prev">Previous</button><button id="next">Next</button></div>
   </div>
 
+  <h2>Client tokens</h2>
+  <div class="card table">
+    <table>
+      <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
+      <tbody id="tokens"></tbody>
+    </table>
+    <form id="t-new" class="filters" style="padding:10px;margin:0">
+      <input id="t-name" required maxlength="60" placeholder="Name, e.g. notewise-prod" aria-label="Token name" style="width:240px">
+      <button class="primary">Create token</button>
+    </form>
+    <div id="t-made" hidden style="padding:0 10px 10px">
+      <div class="k">Copy it now: it won’t be shown again.</div>
+      <div class="filters" style="margin:6px 0 0"><input id="t-value" readonly style="width:min(100%, 520px);font-family:monospace">
+        <button id="t-copy" type="button">Copy</button><button id="t-done" type="button">Done</button></div>
+    </div>
+  </div>
+
   <footer>
     <span>History is kept 30 days.</span>
     <button id="clear" class="danger">Clear history</button>
@@ -157,7 +174,6 @@ const plots = {};
 
 const get = async url => {
   const res = await fetch(url);
-  if (res.status === 401) location.href = '/login';
   return res.json();
 };
 
@@ -279,7 +295,7 @@ async function loadJobs() {
 function openDetail(j) {
   $('d-title').textContent = `Job #${j.id}`;
   const st = statusOf(j);
-  const rows = [['Status', `<span class="st ${st}">${STATUS_LABEL[st]}</span>`], ['Time', when(j.created)], ['Client', esc(j.client)],
+  const rows = [['Status', `<span class="st ${st}">${STATUS_LABEL[st]}</span>`], ['Time', when(j.created)], ['Client', esc(j.client)], ['IP', esc(j.ip ?? '-')],
     ['Task', esc(j.task)], ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
   $('d-body').innerHTML = `<a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"></a>
     <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${j.error ? `<pre>${esc(j.error)}</pre>` : ''}
@@ -326,11 +342,43 @@ $('clear').onclick = async () => {
   offset = 0; loadTiles(); loadCharts(); loadJobs();
 };
 
+async function loadTokens() {
+  const { tokens } = await get('/admin/tokens');
+  $('tokens').innerHTML = tokens.map(t => `<tr><td>${esc(t.name)}</td><td>${when(t.created)}</td>
+      <td>${t.last_used ? ago(t.last_used) : 'never'}</td><td>${esc(t.last_ip ?? '-')}</td>
+      <td><button class="danger" data-revoke="${t.id}" data-name="${esc(t.name)}">Revoke</button></td></tr>`).join('')
+    || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">No client tokens yet</td></tr>';
+}
+$('tokens').onclick = async e => {
+  const b = e.target.closest('[data-revoke]');
+  if (!b) return;
+  // same two-step confirm as Clear history
+  if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = `Click again to revoke ${b.dataset.name}`; return; }
+  await fetch(`/admin/tokens/${b.dataset.revoke}/revoke`, { method: 'POST' });
+  loadTokens();
+};
+$('t-new').onsubmit = async e => {
+  e.preventDefault();
+  const res = await fetch('/admin/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: $('t-name').value }) });
+  const body = await res.json();
+  if (!res.ok) return alert(body.error);
+  $('t-name').value = '';
+  $('t-value').value = body.token;
+  $('t-copy').textContent = 'Copy';
+  $('t-made').hidden = false;
+  $('t-value').select();
+  loadTokens();
+};
+$('t-copy').onclick = () => { navigator.clipboard.writeText($('t-value').value); $('t-copy').textContent = 'Copied'; };
+// clears the plain token from the page once it's been taken
+$('t-done').onclick = () => { $('t-value').value = ''; $('t-made').hidden = true; $('t-copy').textContent = 'Copy'; };
+
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(loadCharts, 200); });
 matchMedia('(prefers-color-scheme: dark)').onchange = () => { loadTiles(); loadCharts(); refresh(); };
 
-refresh(); loadTiles(); setRange(range); loadJobs();
+refresh(); loadTiles(); setRange(range); loadJobs(); loadTokens();
 setInterval(refresh, 2000);
 setInterval(() => { loadTiles(); loadCharts(); loadJobs(); }, 15000);
 </script>

@@ -61,8 +61,7 @@ $('run').onclick = async () => {
   $('status').className = '';
   $('status').textContent = 'Processing…';
   try {
-    const res = await fetch('/ocr?task=' + $('task').value, { method: 'POST', body: file });
-    if (res.status === 401) return location.href = '/login';
+    const res = await fetch('/admin/ocr?task=' + $('task').value, { method: 'POST', body: file });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
     $('out').value = data.text;

@@ -48,11 +48,11 @@ The line detector models for `/v2/ocr` (PP-OCRv5, a few MB) download on the firs
 ## Run
 
 ```sh
-./run.sh                                       # 127.0.0.1:8001, auth off
-OCR_TOKEN=secret ./run.sh --host 100.x.y.z     # Tailscale IP; token required off localhost
+./run.sh                      # 127.0.0.1:8001
+./run.sh --host 100.x.y.z     # Tailscale IP
 ```
 
-UI: http://127.0.0.1:8001/ , admin: /admin
+UI: http://127.0.0.1:8001/ , admin: /admin. Both open only from the Bina machine itself, with no login; from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
 
 Tested on Linux. On other systems the process RAM card shows `-`.
 
@@ -73,7 +73,7 @@ Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails
 
 Extract the text (Persian/English) from one image. One image runs at a time; up to 3 more wait, beyond that the server answers `503 busy`.
 
-**Auth**: when the server has `OCR_TOKEN` set, send `Authorization: Bearer <token>` (all routes except `/health`, `/login`). Optional `X-Client: <name>` labels the job in the admin history.
+**Auth**: `/ocr` and `/v2/ocr` need `Authorization: Bearer <token>`, always, even from the Bina machine. The token is a client token, made under *Client tokens* in `/admin`; its name labels every job it sends and can't be changed by the client. Each job also records the caller's IP. `/health` is open. `/docs` takes a client token or the Bina machine. Everything else (the UI, `/admin`) is only reachable from the Bina machine.
 
 Images with a long edge over 2500 px are downscaled first; over 100 MP are rejected.
 
@@ -108,6 +108,7 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | 400 | empty body, unreadable image, or bad `task` |
 | 404 | unknown path |
 | 401 | missing or wrong token |
+| 403 | admin route from another machine |
 | 413 | body over 30 MB, or image over 100 MP |
 | 500 | inference failed |
 | 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin; see `Retry-After` |
@@ -162,9 +163,13 @@ Locating lines never fails the request: if it breaks, `lines` is `[]`. The text 
 
 `200 {"status": "ok", "device": "cuda", "version": "0.5", "busy": false, "waiting": 0, "docs": "/docs"}`. `status` is `ok` or `paused`, `device` is `cuda` or `cpu`. No auth.
 
+### `GET /whoami`
+
+`200 {"name": "notewise-prod"}`: the client token's name, so a client can check its token without sending a page. `401` if the token is missing or wrong.
+
 ### Admin
 
-Same auth as `/ocr`. Used by the `/admin` page.
+From the Bina machine only, no token. Used by the `/admin` page.
 
 | Route | Returns |
 |---|---|
@@ -175,6 +180,10 @@ Same auth as `/ocr`. Used by the `/admin` page.
 | `GET /admin/thumb/<id>` | JPEG thumbnail |
 | `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` and `/v2/ocr` |
 | `POST /admin/clear` | deletes all job history |
+| `GET /admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
+| `POST /admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |
+| `POST /admin/tokens/<id>/revoke` | deletes the token |
+| `POST /admin/ocr` | same as `POST /ocr`, no token; the test page on `/` |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
 
@@ -188,4 +197,4 @@ This API section, as `text/markdown`. Unknown paths return `404 {"error": "not f
 
 Web UI.
 
-Web UI (login with the token when `OCR_TOKEN` is set).
+Web UI, from the Bina machine only.

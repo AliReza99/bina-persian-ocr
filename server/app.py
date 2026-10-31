@@ -1,12 +1,11 @@
 """Bina OCR HTTP server.
 
-Run:   OCR_TOKEN=secret .venv/bin/python server/app.py [--host 127.0.0.1] [--port 8001]
-UI:    open http://127.0.0.1:8001/  (admin: /admin)
+Run:   .venv/bin/python server/app.py [--host 127.0.0.1] [--port 8001]
+UI:    open http://127.0.0.1:8001/  (admin: /admin, both only from this machine; make client tokens there)
 Docs:  http://127.0.0.1:8001/docs (README.md)
-API:   curl -H 'Authorization: Bearer secret' --data-binary @page.jpg http://127.0.0.1:8001/ocr
+API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/ocr
 """
-import argparse, hmac, io, json, os, pathlib, sys, time
-from http.cookies import SimpleCookie
+import argparse, io, json, pathlib, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -21,9 +20,12 @@ NOT_FOUND = {'error': 'not found', 'docs': '/docs'}
 MAX_BYTES = 30 * 2**20
 MAX_EDGE = 2500  # longer images are downscaled before inference
 Image.MAX_IMAGE_PIXELS = 50_000_000  # decompression-bomb guard: Pillow raises above 2x this
-TOKEN = os.environ.get('OCR_TOKEN', '')
-PUBLIC = {'/health', '/login'}
-PAGES = {'/': 'index.html', '/admin': 'admin.html', '/login': 'login.html'}
+PUBLIC = {'/health'}
+OCR_PATHS = {'/ocr', '/v2/ocr', '/whoami'}  # need a client token, even from this machine
+DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
+# everything else is admin: this machine only, no login
+LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
+PAGES = {'/': 'index.html', '/admin': 'admin.html'}
 VENDOR = {'/vendor/uPlot.iife.min.js': 'text/javascript', '/vendor/uPlot.min.css': 'text/css'}
 
 
@@ -45,26 +47,23 @@ class Handler(BaseHTTPRequestHandler):
     def reply(self, code, obj, headers=()):
         self.send(code, json.dumps(obj, ensure_ascii=False).encode(), 'application/json; charset=utf-8', headers)
 
-    def redirect(self, to, headers=()):
-        self.send(303, b'', 'text/plain', [('Location', to), *headers])
-
-    def authed(self):
-        if not TOKEN:
-            return True
-        given = self.headers.get('Authorization', '').removeprefix('Bearer ')
-        if not given:
-            morsel = SimpleCookie(self.headers.get('Cookie', '')).get('ocr_token')
-            given = morsel.value if morsel else ''
-        return hmac.compare_digest(given.encode(), TOKEN.encode())
+    def is_local(self):
+        ip = self.client_address[0]
+        # bound to one address (e.g. Tailscale), this machine reaches itself from that same address
+        return ip in LOCAL_IPS or ip == self.server.server_address[0]
 
     def guard(self, path):
-        """True if the request may proceed; otherwise the rejection is already sent."""
-        if path in PUBLIC or self.authed():
+        """True if the request may proceed; otherwise the rejection is already sent. Sets self.who."""
+        given = self.headers.get('Authorization', '').removeprefix('Bearer ')
+        self.who = (given and jobs.token_client(given, self.client_address[0])) or None
+        if path in PUBLIC or (path in OCR_PATHS and self.who):
             return True
-        if path in PAGES:
-            self.redirect('/login')
-        else:
+        if path not in OCR_PATHS and (self.is_local() or (path in DOC_PATHS and self.who)):
+            return True
+        if path in OCR_PATHS or path in DOC_PATHS:
             self.reply(401, {'error': 'missing or wrong token'})
+        else:
+            self.reply(403, {'error': 'admin is only reachable from the Bina machine'})
         return False
 
     def body(self, limit):
@@ -76,8 +75,6 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         if not self.guard(path):
             return
-        if path == '/login' and not TOKEN:
-            return self.redirect('/admin')  # auth off: nothing to log into
         if path in PAGES:
             return self.send(200, (STATIC / PAGES[path]).read_bytes(), 'text/html; charset=utf-8')
         if path in ('/docs', '/llms.txt'):
@@ -89,6 +86,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'status': 'paused' if s['paused'] else 'ok', 'device': ocr.device,
                                     'version': VERSION, 'busy': s['running'] is not None,
                                     'waiting': s['waiting'], 'docs': '/docs'})
+        if path == '/whoami':  # lets a client check its token without sending a page
+            return self.reply(200, {'name': self.who})
         if path in VENDOR:
             return self.send(200, (STATIC / path[1:]).read_bytes(), VENDOR[path], [('Cache-Control', 'max-age=86400')])
         if path == '/admin/state':
@@ -110,6 +109,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {'error': 'id, offset and limit must be integers'})
             rows, total = jobs.recent(sort, status, q.get('client', ''), q.get('task', ''), job_id, offset, limit)
             return self.reply(200, {'jobs': rows, 'total': total})
+        if path == '/admin/tokens':
+            return self.reply(200, {'tokens': jobs.tokens()})
         job_id = path.removeprefix('/admin/text/')
         if job_id != path and job_id.isdigit():
             return self.reply(200, {'text': jobs.text(int(job_id))})
@@ -122,21 +123,33 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if not self.guard(url.path):
             return
-        if url.path == '/login':
-            _, raw = self.body(4096)
-            given = parse_qs((raw or b'').decode()).get('token', [''])[0]
-            if not TOKEN or not hmac.compare_digest(given.encode(), TOKEN.encode()):
-                return self.redirect('/login?wrong=1' if TOKEN else '/admin')
-            cookie = f'ocr_token={given}; HttpOnly; SameSite=Strict; Path=/; Max-Age={90 * 86400}'
-            return self.redirect('/admin', [('Set-Cookie', cookie)])
         if url.path in ('/admin/pause', '/admin/resume'):
             jobs.set_paused(url.path == '/admin/pause')
             return self.reply(200, jobs.state())
+        if url.path == '/admin/tokens':
+            _, raw = self.body(4096)
+            try:
+                name = str(json.loads(raw or b'{}').get('name', '')).strip()
+            except (ValueError, AttributeError):
+                name = ''
+            if not 0 < len(name) <= 60:
+                return self.reply(400, {'error': 'send {"name": "..."}, 1 to 60 characters'})
+            try:
+                return self.reply(201, {'name': name, 'token': jobs.create_token(name)})
+            except ValueError as e:
+                return self.reply(409, {'error': str(e)})
+        token_id = url.path.removeprefix('/admin/tokens/').removesuffix('/revoke')
+        if url.path.endswith('/revoke') and token_id.isdigit():
+            jobs.revoke_token(int(token_id))
+            return self.reply(200, {'revoked': True})
         if url.path == '/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
         if url.path in ('/ocr', '/v2/ocr'):
             return self.ocr(url, v2=url.path == '/v2/ocr')
+        if url.path == '/admin/ocr':  # the test page on /, from this machine
+            self.who = 'test page'
+            return self.ocr(url)
         self.reply(404, NOT_FOUND)
 
     def ocr(self, url, v2=False):
@@ -166,8 +179,9 @@ class Handler(BaseHTTPRequestHandler):
             jobs.release()
 
     def run_job(self, task, image, size, v2=False):
-        client = self.headers.get('X-Client') or self.client_address[0]
-        job_id = jobs.start(client, task, image, size)
+        ip = self.client_address[0]
+        client = self.who  # the token's name: a client can't relabel itself
+        job_id = jobs.start(client, ip, task, image, size)
         tick = [time.monotonic()]
 
         def on_start():
@@ -201,8 +215,5 @@ if __name__ == '__main__':
     p.add_argument('--host', default='127.0.0.1')
     p.add_argument('--port', type=int, default=8001)
     a = p.parse_args()
-    if not TOKEN and a.host not in ('127.0.0.1', 'localhost', '::1'):
-        sys.exit('OCR_TOKEN must be set when listening beyond localhost')
-    print(f'Bina OCR {VERSION} on {ocr.device}, listening on http://{a.host}:{a.port}'
-          + ('' if TOKEN else ' (no OCR_TOKEN: auth off)'), flush=True)
+    print(f'Bina OCR {VERSION} on {ocr.device}, listening on http://{a.host}:{a.port}', flush=True)
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()
