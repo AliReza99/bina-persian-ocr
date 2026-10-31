@@ -5,77 +5,290 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bina OCR</title>
 <style>
-  :root { --bg:#f6f6f4; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#ddd; --accent:#2f6fde; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ececea; --muted:#9a9a94; --card:#20201e; --line:#3a3a37; --accent:#6b9cf0; } }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, "Vazirmatn", Tahoma, sans-serif; }
-  main { max-width:1200px; margin:0 auto; padding:16px; }
-  h1 { font-size:20px; margin:0 0 12px; }
-  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
-  button, select, label.file { font:inherit; padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); cursor:pointer; }
+  :root {
+    --bg:#f7f7f8; --panel:#fff; --fg:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5;
+    --accent:#2563eb; --ok:#16a34a; --guess:#d97706; --miss:#dc2626; --det:#7c3aed;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#0f0f11; --panel:#18181b; --fg:#f4f4f5; --muted:#a1a1aa; --line:#2e2e33; --soft:#232327;
+    --accent:#60a5fa; --ok:#4ade80; --guess:#fbbf24; --miss:#f87171; --det:#a78bfa;
+  } }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, "Vazirmatn", Tahoma, sans-serif; }
+  #app { display:flex; flex-direction:column; height:100vh; }
+  button, select { font:inherit; padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--fg); cursor:pointer; }
+  button:hover:not(:disabled), select:hover { border-color:var(--muted); }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button:disabled { opacity:.5; cursor:default; }
-  #status { color:var(--muted); }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; min-height:200px; }
-  img { max-width:100%; display:block; margin:auto; }
-  #out { width:100%; min-height:60vh; border:0; resize:vertical; background:transparent; color:inherit; font:inherit; line-height:1.9; unicode-bidi:plaintext; }  /* each line picks its own direction, box stays put */
-  .warn { color:#c2410c; }
+  button:disabled { opacity:.45; cursor:default; }
+  a { color:var(--muted); text-decoration:none; } a:hover { color:var(--fg); }
+
+  header { display:flex; align-items:center; gap:8px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0 12px 0 0; }
+  header .grow { flex:1; }
+  .status { color:var(--muted); }
+  .status.err { color:var(--miss); }
+
+  .body { flex:1; display:flex; min-height:0; }
+  aside { width:180px; flex:none; border-inline-end:1px solid var(--line); background:var(--panel); overflow:auto; padding:8px; }
+  aside h2, .side h2 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:4px 4px 8px; font-weight:600; }
+  .hist { display:block; width:100%; text-align:start; padding:6px; margin-bottom:6px; border-radius:8px; }
+  .hist.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .hist img { width:100%; height:70px; object-fit:cover; border-radius:4px; display:block; background:var(--soft); }
+  .hist small { display:block; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; margin-top:3px; }
+
+  .view { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .tools { display:flex; gap:14px; align-items:center; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; color:var(--muted); font-size:13px; }
+  .tools label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+  .swatch { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .stage { flex:1; min-height:0; padding:16px; display:flex; justify-content:center; align-items:center; }
+  .page { position:relative; max-width:100%; box-shadow:0 1px 3px rgba(0,0,0,.12); background:#fff; }
+  .page img { display:block; max-width:100%; max-height:calc(100vh - 130px); }  /* whole page in view, no scrolling */
+  .page svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .page polygon { vector-effect:non-scaling-stroke; stroke-width:1.5px; pointer-events:all; cursor:pointer; }
+  polygon.ok { fill:color-mix(in srgb, var(--ok) 10%, transparent); stroke:var(--ok); }
+  polygon.guess { fill:color-mix(in srgb, var(--guess) 12%, transparent); stroke:var(--guess); stroke-dasharray:5 3; }
+  polygon.det { fill:color-mix(in srgb, var(--det) 14%, transparent); stroke:var(--det); stroke-dasharray:2 2; }
+  polygon.hot { fill:color-mix(in srgb, var(--accent) 30%, transparent); stroke:var(--accent); stroke-width:2.5px; }
+  .tag { position:absolute; transform:translate(-100%, 0); font:600 10px/1 system-ui; padding:2px 3px; border-radius:3px; color:#fff; pointer-events:none; }
+  .tag.ok { background:var(--ok); } .tag.guess { background:var(--guess); } .tag.hot { background:var(--accent); }
+
+  .drop { margin:auto; width:min(420px, 90%); padding:40px 24px; text-align:center; border:2px dashed var(--line); border-radius:14px; background:var(--panel); color:var(--muted); cursor:pointer; }
+  .drop strong { display:block; color:var(--fg); font-size:16px; margin-bottom:4px; }
+  .over::after { content:"Drop to read"; position:fixed; inset:0; display:grid; place-items:center; font-size:22px; color:var(--accent);
+                 background:color-mix(in srgb, var(--accent) 10%, transparent); border:3px dashed var(--accent); pointer-events:none; z-index:9; }
+
+  .side-wrap { position:relative; flex:none; display:flex; min-height:0; }
+  .grip { position:absolute; inset-block:0; inset-inline-start:-3px; width:6px; cursor:col-resize; z-index:2; touch-action:none; }
+  .grip:hover, .grip.on { background:var(--accent); }
+  .side { flex:1; min-width:0; border-inline-start:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0; }
+  .stats { display:grid; grid-template-columns:repeat(4, 1fr); border-bottom:1px solid var(--line); }
+  .stat { padding:10px 12px; border-inline-end:1px solid var(--line); }
+  .stat:last-child { border:0; }
+  .stat b { display:block; font-size:18px; font-variant-numeric:tabular-nums; }
+  .stat span { font-size:11px; color:var(--muted); }
+  .tabs { display:flex; gap:2px; padding:8px 12px 0; border-bottom:1px solid var(--line); }
+  .tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; color:var(--muted); padding:6px 10px; }
+  .tabs button.on { color:var(--fg); border-color:var(--accent); }
+  .tabs .grow { flex:1; }
+  .filters { display:flex; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); }
+  .chip { font-size:12px; padding:2px 10px; border-radius:99px; }
+  .chip.on { background:var(--fg); color:var(--panel); border-color:var(--fg); }
+  .pane { flex:1; overflow:auto; min-height:0; }
+  .row { display:grid; grid-template-columns:34px 10px 1fr; gap:8px; align-items:baseline; padding:5px 12px; border-bottom:1px solid var(--soft); cursor:pointer; }
+  .row:hover, .row.hot { background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  .row.miss { background:color-mix(in srgb, var(--miss) 7%, transparent); }
+  .row.miss.hot { background:color-mix(in srgb, var(--miss) 15%, transparent); }
+  .row .n { color:var(--muted); font-size:12px; text-align:end; font-variant-numeric:tabular-nums; }
+  .dot { width:8px; height:8px; border-radius:50%; align-self:center; }
+  .dot.ok { background:var(--ok); } .dot.guess { background:var(--guess); } .dot.miss { background:var(--miss); }
+  .row .t { unicode-bidi:plaintext; line-height:1.8; overflow-wrap:anywhere; }
+  .det-row .t { color:var(--muted); }
+  textarea, pre { width:100%; height:100%; margin:0; border:0; padding:12px; resize:none; background:transparent; color:inherit; }
+  textarea { font:inherit; line-height:1.9; unicode-bidi:plaintext; }
+  pre { font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; }
+  .empty { padding:24px; color:var(--muted); text-align:center; }
+
+  @media (max-width:1000px) {
+    #app { height:auto; } .body { flex-direction:column; }
+    aside { width:auto; display:flex; gap:6px; overflow-x:auto; border:0; border-bottom:1px solid var(--line); }
+    aside h2 { display:none; } .hist { width:110px; flex:none; margin:0; }
+    .side-wrap { width:auto !important; } .grip { display:none; }
+    .side { width:auto; border:0; border-top:1px solid var(--line); } .pane { max-height:70vh; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>Bina OCR</h1>
-  <div class="bar">
-    <label class="file">Choose image<input id="file" type="file" accept="image/*" hidden></label>
-    <select id="task"><option value="ocr">Plain text</option><option value="markup">Markdown</option></select>
-    <button id="run" class="primary" disabled>Extract text</button>
-    <button id="copy" disabled>Copy</button>
-    <span id="status" role="status"></span>
-    <a href="/admin" style="margin-inline-start:auto;color:var(--muted)">Admin</a>
-    <a href="/docs" style="color:var(--muted)">API docs</a>
-  </div>
-  <div class="grid">
-    <div class="card"><img id="preview" alt=""></div>
-    <div class="card"><textarea id="out" readonly aria-label="Extracted text"></textarea></div>
-  </div>
-</main>
-<script>
-const $ = id => document.getElementById(id);
-let file = null;
+<div id="app"></div>
+<script type="module">
+import { html, render, useEffect, useRef, useState } from '/vendor/htm-preact.js';
 
-$('file').onchange = () => {
-  file = $('file').files[0] || null;
-  if (!file) return;
-  $('preview').src = URL.createObjectURL(file);
-  $('preview').alt = file.name;
-  $('out').value = '';
-  $('status').textContent = file.name;
-  $('run').disabled = false;
-  $('run').click();
-};
+const DOT = { ok: 'Matched', guess: 'Guessed', miss: 'No box' };
 
-$('run').onclick = async () => {
-  $('run').disabled = $('copy').disabled = true;
-  $('status').className = '';
-  $('status').textContent = 'Processing…';
-  try {
-    const res = await fetch('/admin/ocr?task=' + $('task').value, { method: 'POST', body: file });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || res.status);
-    $('out').value = data.text;
-    $('status').textContent = data.seconds + ' s' + (data.incomplete ? ' (some text may be incomplete)' : '');
-    if (data.incomplete) $('status').className = 'warn';
-    $('copy').disabled = false;
-  } catch (e) {
-    $('status').className = 'warn';
-    $('status').textContent = 'Error: ' + e.message;
+// every non-empty OCR line with its box state: ok / guess / miss
+function rowsOf(r) {
+  const boxes = new Map((r.lines || []).map(l => [l.line, l]));
+  return r.text.split('\n').map((t, i) => {
+    const b = boxes.get(i);
+    return { i, t, box: b?.box, state: b ? (b.guess ? 'guess' : 'ok') : 'miss' };
+  }).filter(r => r.t.trim());
+}
+
+// detector boxes no line was matched to, keyed 'd<index>' so they share the hover state with lines
+const unused = r => (r?.detector || []).map((d, i) => ({ ...d, k: 'd' + i })).filter(d => !d.used);
+const pts = box => box.map(p => p.join(',')).join(' ');
+const corner = box => ({ left: Math.max(...box.map(p => p[0])) * 100 + '%', top: Math.min(...box.map(p => p[1])) * 100 + '%' });
+
+function Page({ item, rows, show, hot, setHot }) {
+  const det = unused(item.result);
+  return html`<div class="page">
+    <img src=${item.url} alt=${item.name}/>
+    <svg viewBox="0 0 1 1" preserveAspectRatio="none">
+      ${show.det && det.map(d => html`<polygon class=${hot === d.k ? 'hot' : 'det'} onMouseEnter=${() => setHot(d.k)} onMouseLeave=${() => setHot(null)} points=${pts(d.box)}><title>Unused detector box: ${d.read || '(no read)'}</title></polygon>`)}
+      ${rows.filter(r => r.box && show[r.state]).map(r => html`
+        <polygon class=${hot === r.i ? 'hot' : r.state} points=${pts(r.box)}
+          onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}><title>${r.i + 1}: ${r.t}</title></polygon>`)}
+    </svg>
+    ${show.num && rows.filter(r => r.box && show[r.state]).map(r => html`
+      <span class=${'tag ' + (hot === r.i ? 'hot' : r.state)} style=${corner(r.box)}>${r.i + 1}</span>`)}
+  </div>`;
+}
+
+function Lines({ item, rows, hot, setHot }) {
+  const [filter, setFilter] = useState('all');
+  const ref = useRef();
+  useEffect(() => { ref.current?.querySelector('.row.hot')?.scrollIntoView({ block: 'nearest' }); }, [hot]);
+  const shown = filter === 'all' ? rows : rows.filter(r => r.state === filter);
+  const det = unused(item.result);
+  return html`
+    <div class="filters">
+      ${['all', 'miss', 'guess', 'ok'].map(f => html`
+        <button class=${'chip' + (filter === f ? ' on' : '')} onClick=${() => setFilter(f)}>
+          ${f === 'all' ? 'All' : DOT[f]} ${f === 'all' ? rows.length : rows.filter(r => r.state === f).length}</button>`)}
+      <button class=${'chip' + (filter === 'det' ? ' on' : '')} onClick=${() => setFilter('det')}>Unused boxes ${det.length}</button>
+    </div>
+    <div class="pane" ref=${ref}>
+      ${filter === 'det'
+        ? det.map(d => html`<div class=${'row det-row' + (hot === d.k ? ' hot' : '')} onMouseEnter=${() => setHot(d.k)} onMouseLeave=${() => setHot(null)}><span class="n"></span><span class="dot" style="background:var(--det)"></span><span class="t">${d.read || '(no read)'}</span></div>`)
+        : shown.map(r => html`
+          <div class=${'row ' + (r.state === 'miss' ? 'miss ' : '') + (hot === r.i ? 'hot' : '')} title=${DOT[r.state]}
+            onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}>
+            <span class="n">${r.i + 1}</span><span class=${'dot ' + r.state}></span><span class="t">${r.t}</span>
+          </div>`)}
+      ${!shown.length && filter !== 'det' && html`<div class="empty">Nothing here</div>`}
+    </div>`;
+}
+
+function Side({ item, rows, hot, setHot }) {
+  const [tab, setTab] = useState('text');
+  const r = item?.result;
+  const placed = rows.filter(x => x.state !== 'miss').length;
+  const copy = r && (tab === 'json' ? JSON.stringify(r, null, 2) : r.text);
+  // same layout before and during a read, with a note where the result will go
+  const empty = !item ? 'Open an image to see its text here' : item.error ? item.error : 'Reading…';
+  return html`<div class="side">
+    <div class="stats">
+      <div class="stat"><b>${r ? r.seconds + 's' : '–'}</b><span>OCR${r?.incomplete ? ' · incomplete' : ''}</span></div>
+      <div class="stat"><b>${r?.align_seconds != null ? r.align_seconds + 's' : '–'}</b><span>Boxes</span></div>
+      <div class="stat"><b style=${placed < rows.length ? 'color:var(--miss)' : ''}>${r ? `${placed}/${rows.length}` : '–'}</b><span>Lines placed</span></div>
+      <div class="stat"><b>${r ? rows.filter(x => x.state === 'guess').length : '–'}</b><span>Guessed</span></div>
+    </div>
+    <div class="tabs">
+      ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'Response']].map(([k, l]) => html`
+        <button class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</button>`)}
+      <span class="grow"></span>
+      ${r && tab !== 'lines' && html`<button class="chip" onClick=${() => navigator.clipboard.writeText(copy)}>Copy</button>`}
+    </div>
+    ${!r && html`<div class=${'empty' + (item?.error ? ' status err' : '')}>${empty}</div>`}
+    ${r && tab === 'lines' && html`<${Lines} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>`}
+    ${r && tab === 'text' && html`<div class="pane"><textarea readonly aria-label="Extracted text" value=${r.text}></textarea></div>`}
+    ${r && tab === 'json' && html`<div class="pane"><pre>${JSON.stringify(r, null, 2)}</pre></div>`}
+  </div>`;
+}
+
+let nextId = 0;
+
+function App() {
+  const [items, setItems] = useState([]);  // shortcut: history lives in this tab only, lost on reload
+  const [cur, setCur] = useState(null);
+  const [task, setTask] = useState('ocr');
+  const [hot, setHot] = useState(null);
+  const [over, setOver] = useState(false);
+  const [show, setShow] = useState({ ok: true, guess: true, det: true, num: true });
+  const input = useRef();
+  const [width, setWidth] = useState(() => { try { return +localStorage.sideWidth || 460; } catch { return 460; } });
+  const [resizing, setResizing] = useState(false);
+
+  function resize(e) {  // drag the panel's left edge; the width is remembered in this browser
+    e.preventDefault(); setResizing(true);
+    let w = width;
+    const move = ev => { w = Math.min(Math.max(innerWidth - ev.clientX, 300), innerWidth * .7); setWidth(w); };
+    const up = () => {
+      setResizing(false);
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      try { localStorage.sideWidth = Math.round(w); } catch {}
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
   }
-  $('run').disabled = false;
-};
 
-$('copy').onclick = () => navigator.clipboard.writeText($('out').value);
+  const patch = (id, p) => setItems(xs => xs.map(x => x.id === id ? { ...x, ...p } : x));
+
+  async function run(it) {
+    patch(it.id, { result: null, error: null, task });
+    try {
+      const res = await fetch('/admin/ocr?task=' + task, { method: 'POST', body: it.file });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.status);
+      patch(it.id, { result: data });
+    } catch (e) {
+      patch(it.id, { error: 'Error: ' + e.message });
+    }
+  }
+
+  function add(file) {
+    if (!file?.type.startsWith('image/')) return;
+    const it = { id: nextId++, file, name: file.name || 'pasted image', url: URL.createObjectURL(file), time: new Date() };
+    setItems(xs => [it, ...xs]);
+    setCur(it.id); setHot(null);
+    run(it);
+  }
+
+  useEffect(() => {  // drop or paste anywhere on the page
+    const drag = e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setOver(true); } };
+    const leave = e => { if (!e.relatedTarget) setOver(false); };
+    const drop = e => { e.preventDefault(); setOver(false); add(e.dataTransfer.files[0]); };
+    const paste = e => add([...e.clipboardData.files][0]);
+    addEventListener('dragover', drag); addEventListener('dragleave', leave); addEventListener('drop', drop); addEventListener('paste', paste);
+    return () => { removeEventListener('dragover', drag); removeEventListener('dragleave', leave); removeEventListener('drop', drop); removeEventListener('paste', paste); };
+  });
+
+  const item = items.find(x => x.id === cur);
+  const rows = item?.result ? rowsOf(item.result) : [];
+  const busy = item && !item.result && !item.error;
+  const toggle = k => setShow(s => ({ ...s, [k]: !s[k] }));
+  const legend = [['ok', 'Matched', 'var(--ok)'], ['guess', 'Guessed', 'var(--guess)'], ['det', 'Unused detector box', 'var(--det)'], ['num', 'Line numbers']];
+
+  return html`<div id="app" class=${over ? 'over' : ''}>
+    <header>
+      <h1>Bina OCR</h1>
+      <button class="primary" onClick=${() => input.current.click()}>Open image</button>
+      <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
+      <select value=${task} onChange=${e => setTask(e.target.value)} aria-label="Output">
+        <option value="ocr">Plain text</option><option value="markup">Markdown</option></select>
+      <button disabled=${!item || busy} onClick=${() => run(item)}>Run again</button>
+      <span class="status">${busy ? 'Reading ' + item.name + '…' : ''}</span>
+      <span class="grow"></span>
+      <a href="/admin">Admin</a><a href="/docs">API docs</a>
+    </header>
+    <div class="body">
+      ${items.length > 0 && html`<aside>
+        <h2>History</h2>
+        ${items.map(x => html`<button class=${'hist' + (x.id === cur ? ' on' : '')} onClick=${() => { setCur(x.id); setHot(null); }}>
+          <img src=${x.url} alt=""/>
+          <small>${x.name}</small>
+          <small>${x.time.toLocaleTimeString()} · ${x.error ? 'failed' : x.result ? x.result.seconds + 's' : 'reading…'}</small>
+        </button>`)}
+      </aside>`}
+      <div class="view">
+        <div class="tools">
+          ${legend.map(([k, l, c]) => html`<label><input type="checkbox" disabled=${!item} checked=${show[k]} onChange=${() => toggle(k)}/>
+            ${c && html`<span class="swatch" style=${'background:' + c}></span>`}${l}</label>`)}
+        </div>
+        <div class="stage">
+          ${item ? html`<${Page} item=${item} rows=${rows} show=${show} hot=${hot} setHot=${setHot}/>`
+                 : html`<div class="drop" onClick=${() => input.current.click()}>
+                     <strong>Drop an image, paste it, or click to open</strong>Lines and their boxes show up side by side</div>`}
+        </div>
+      </div>
+      <div class="side-wrap" style=${{ width: width + 'px' }}>
+        <div class=${'grip' + (resizing ? ' on' : '')} onPointerDown=${resize} title="Drag to resize"></div>
+        <${Side} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>
+      </div>
+    </div>
+  </div>`;
+}
+
+render(html`<${App}/>`, document.body);
 </script>
 </body>
 </html>

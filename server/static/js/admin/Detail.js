@@ -16,16 +16,20 @@ export function Detail({ job: j, onClose }) {
   const st = j && statusOf(j);
   const rows = j && [['Status', html`<span class="st ${st}">${STATUS_LABEL[st]}</span>`], ['Time', when(j.created)], ['Client', j.client], ['IP', j.ip ?? '-'],
     ['Task', j.task], ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
-  return html`<dialog ref=${dialog} aria-labelledby="d-title" onClose=${onClose} onClick=${e => e.target === dialog.current && dialog.current.close()}>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 id="d-title" style="margin:0;font-size:18px;text-transform:none;letter-spacing:0;color:var(--fg)">${j && `Job #${j.id}`}</h2>
-      <button onClick=${() => dialog.current.close()}>Close</button>
+  return html`<dialog class="job" ref=${dialog} aria-labelledby="d-title" onClose=${onClose} onClick=${e => e.target === dialog.current && dialog.current.close()}>
+    <div class="d-head">
+      <h2 id="d-title">${j && `Job #${j.id}`}</h2>${j && html`<span class="st ${st}">${STATUS_LABEL[st]}</span>`}
+      <span style="flex:1"></span>
+      ${text && html`<button onClick=${() => navigator.clipboard.writeText(text)}>Copy text</button>`}
+      <button class="ghost" aria-label="Close" onClick=${() => dialog.current.close()}>✕</button>
     </div>
-    ${j && html`<div>
-      <a href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/></a>
-      <dl>${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>
-      ${j.error ? html`<pre>${j.error}</pre>` : null}
-      <h3>Extracted text</h3><pre class="ocr">${text ?? 'Loading…'}</pre>
+    ${j && html`<div class="d-body">
+      <a class="d-img" href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/></a>
+      <div class="d-info">
+        <dl>${rows.slice(1).map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
+        ${j.error ? html`<pre>${j.error}</pre>` : null}
+        <pre class="ocr">${text ?? 'Loading…'}</pre>
+      </div>
     </div>`}
   </dialog>`;
 }

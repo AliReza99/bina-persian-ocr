@@ -172,9 +172,10 @@ def fill(quad, used, boxes, keys, per_char, rtl):
     return guessed
 
 
-def lines(image, text):
+def lines(image, text, debug=None):
     """image: the RGB PIL image that was read; text: its OCR text.
-    Returns [{'line': index in text.split('\\n'), 'box': 4 [x, y] points as fractions of the image, 'guess'}]."""
+    Returns [{'line': index in text.split('\\n'), 'box': 4 [x, y] points as fractions of the image, 'guess'}].
+    debug: a list to fill with every detector box {'box', 'read', 'used'} (used = matched to a line, not guessed)."""
     index = [i for i, l in enumerate(text.split('\n')) if l.strip()]  # back to raw line numbers
     keys = [norm(text.split('\n')[i]) for i in index]
     if not keys:
@@ -196,5 +197,9 @@ def lines(image, text):
     quad = {j: np.array(boxes[i][0], float) for j, i in placed.items()}
     guessed = fill(quad, set(placed.values()), boxes, keys, per_char, rtl) if quad else {}
     size = np.array(image.size, float)
-    return [{'line': index[j], 'box': [[round(float(v), 4) for v in np.clip(p / size, 0, 1)] for p in q], 'guess': j in guessed}
+    frac = lambda q: [[round(float(v), 4) for v in np.clip(p / size, 0, 1)] for p in np.asarray(q, float)]
+    if debug is not None:
+        used = set(placed.values())
+        debug += [{'box': frac(b), 'read': r, 'used': i in used} for i, (b, r) in enumerate(boxes)]
+    return [{'line': index[j], 'box': frac(q), 'guess': j in guessed}
             for j, q in sorted({**quad, **guessed}.items())]

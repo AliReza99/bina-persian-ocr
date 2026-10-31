@@ -28,9 +28,8 @@ function App() {
     <${Live} state=${state}/>
     ${day && html`<${Tiles} stats=${state.stats} d=${day}/>`}
     ${series && html`<${Trends} d=${series} range=${range} setRange=${setRange}/>`}
-    <${Jobs} clients=${series?.clients || []} tasks=${series?.tasks || []} tick=${tick}/>
+    <${Jobs} clients=${series?.clients || []} tasks=${series?.tasks || []} tick=${tick}><${Clear} done=${cleared}/><//>
     <${Tokens}/>
-    <footer><span>History is kept 30 days.</span><${Clear} done=${cleared}/></footer>
   </main>`;
 }
 

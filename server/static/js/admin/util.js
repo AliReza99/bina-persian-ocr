@@ -7,4 +7,4 @@ export const ago = t => {
 export const kb = b => (b / 1024).toFixed(0) + ' KB';
 export const dur = s => [[86400, 'd'], [3600, 'h'], [60, 'm']].reduce((o, [n, u]) => s >= n || o ? o + Math.floor(s / n) + u + ' ' : o, '').trim() || s + 's';
 export const statusOf = j => j.error ? 'error' : j.seconds == null ? 'running' : j.incomplete ? 'incomplete' : 'ok';
-export const STATUS_LABEL = { ok: 'OK', incomplete: 'Incomplete', error: 'Error', running: 'Running' };
+export const STATUS_LABEL = { ok: 'OK', incomplete: 'Cut short', error: 'Error', running: 'Running' };

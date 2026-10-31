@@ -1,8 +1,11 @@
 import { html, useMemo } from '/vendor/htm-preact.js';
+import { Head } from './Card.js';
 import { Chart } from './Chart.js';
 import { css } from './util.js';
 
-const RANGES = ['1h', '24h', '7d'];
+const RANGES = [['1h', 'Last hour'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days']];
+const TASK_LABEL = { ocr: 'Plain text', markup: 'Markdown' };
+const EDGES = [5, 10, 20, 30, 60, 120];  // time histogram bucket edges, seconds
 
 function chartOpts() {
   const [ok, inc, err, acc, s2] = ['--ok', '--inc', '--err', '--accent', '--s2'].map(css);
@@ -11,14 +14,11 @@ function chartOpts() {
     // stacked: each series is a running sum, so its own count is the gap to the next one
     jobs: {
       scales: { y: { range: (u, min, max) => [0, Math.max(1, max)] } },
-      series: [{}, ...[['Error', err], ['Incomplete', inc], ['OK', ok]].map(([label, c]) => ({ label, fill: c, stroke: c, paths: bars,
+      series: [{}, ...[['Failed', err], ['Cut short', inc], ['Fully read', ok]].map(([label, c]) => ({ label, fill: c, stroke: c, paths: bars,
         points: { show: false }, value: (u, v, si, i) => i == null ? '-' : v - (u.data[si + 1]?.[i] ?? 0) }))],
     },
-    lat: { series: [{}, { label: 'avg', stroke: acc, width: 2, spanGaps: true }, { label: 'p95', stroke: s2, width: 2, dash: [5, 4], spanGaps: true }] },
-    scatter: {
-      mode: 1, scales: { x: { time: false } },
-      series: [{ label: 'MP' }, { label: 'seconds', stroke: acc, paths: () => null, points: { show: true, size: 7, fill: acc } }],
-    },
+    lat: { series: [{}, { label: 'Typical', stroke: acc, width: 2, spanGaps: true, points: { show: true, size: 6 }, value: (u, v) => v == null ? '-' : v + ' s' },
+      { label: 'Slow pages', stroke: s2, width: 2, dash: [5, 4], spanGaps: true, points: { show: true, size: 6 }, value: (u, v) => v == null ? '-' : v + ' s' }] },
   };
 }
 
@@ -30,36 +30,38 @@ export function Trends({ d, range, setRange }) {
       // full stack first, then shorter stacks drawn on top of it
       jobs: [d.t, sum('ok', 'incomplete', 'error'), sum('ok', 'incomplete'), d.ok],
       lat: [d.t, d.avg, d.p95],
-      scatter: [d.scatter.map(p => p[0]), d.scatter.map(p => p[1])],
     };
   }, [d]);
-  return html`<h2>Trends
-    <span class="tabs">${RANGES.map(r => html`<button key=${r} aria-pressed=${r === range} onClick=${() => setRange(r)}>${r}</button>`)}</span>
+  return html`<h2>Over time
+    <span class="tabs">${RANGES.map(([r, l]) => html`<button key=${r} aria-pressed=${r === range} onClick=${() => setRange(r)}>${l}</button>`)}</span>
   </h2>
   <div class="charts">
-    <div class="card"><div class="k">Jobs per bucket</div><${Chart} opts=${opts.jobs} data=${data.jobs}/></div>
-    <div class="card"><div class="k">Latency, seconds</div><${Chart} opts=${opts.lat} data=${data.lat}/></div>
-    <div class="card"><div class="k">Seconds vs megapixels</div><${Chart} opts=${opts.scatter} data=${data.scatter}/></div>
+    <div class="card"><${Head} k="Pages read" hint="Each bar is a slice of time; colors show how those pages ended"/><${Chart} opts=${opts.jobs} data=${data.jobs}/></div>
+    <div class="card"><${Head} k="Seconds per page" hint="Typical = average; slow pages = the slowest 1 in 20"/><${Chart} opts=${opts.lat} data=${data.lat}/></div>
+    <div class="card"><${Head} k="How long pages take" hint="Number of pages that finished within each time"/><${Times} secs=${d.scatter.map(p => p[1])}/></div>
     <div class="card">
-      <div class="k">Clients</div><${Clients} list=${d.clients}/>
-      <div class="k" style="margin-top:14px">Tasks</div><${Tasks} list=${d.tasks}/>
+      <${Head} k="Who sends pages" hint="By client token name"/><${Bars} list=${d.clients}/>
+      <div style="margin-top:16px"><${Head} k="What they ask for" hint="Plain text or Markdown output"/></div>
+      <${Bars} list=${d.tasks.map(([t, n]) => [TASK_LABEL[t] || t, n])} color="--s2"/>
     </div>
   </div>`;
 }
 
-function Clients({ list }) {
-  const top = list[0]?.[1] || 1;
-  return html`<div class="bars">${list.length ? list.slice(0, 8).map(([c, n]) => html`<div key=${c}>
-    <span title=${c}>${c}</span><b style=${{ width: n / top * 100 + '%' }}></b><span>${n}</span></div>`) : html`<div class="k">No jobs</div>`}</div>`;
+function Times({ secs }) {
+  if (!secs.length) return html`<div class="hint">No finished pages</div>`;
+  const counts = [...EDGES, Infinity].map((hi, i) => ({
+    label: hi === Infinity ? `over ${EDGES.at(-1)} s` : `${i ? EDGES[i - 1] : 0}–${hi} s`,
+    n: secs.filter(s => s >= (i ? EDGES[i - 1] : 0) && s < hi).length,
+  }));
+  const top = Math.max(...counts.map(c => c.n));
+  return html`<div class="hist" role="img" aria-label=${counts.map(c => `${c.label}: ${c.n}`).join(', ')}>
+    ${counts.map(c => html`<div key=${c.label}><em>${c.n || ''}</em><b style=${{ height: c.n / top * 100 + '%' }}></b><span>${c.label}</span></div>`)}
+  </div>`;
 }
 
-function Tasks({ list }) {
-  const palette = ['--accent', '--s2', '--ok', '--inc', '--err'].map(css), all = list.reduce((a, t) => a + t[1], 0);
-  if (!all) return html`<div class="donut"><div class="k">No jobs</div></div>`;
-  let at = 0;
-  const stops = list.map(([, n], i) => `${palette[i % 5]} ${at / all * 360}deg ${(at += n) / all * 360}deg`);
-  return html`<div class="donut">
-    <div style=${{ background: `conic-gradient(${stops.join(',')})` }} role="img" aria-label="Task split"></div>
-    <div>${list.map(([t, n], i) => html`<div key=${t}><span class="dot" style=${{ background: palette[i % 5] }}></span>${t} · ${n} (${Math.round(n / all * 100)}%)</div>`)}</div>
-  </div>`;
+function Bars({ list, color = '--accent' }) {
+  const top = list[0]?.[1] || 1, all = list.reduce((a, x) => a + x[1], 0);
+  return html`<div class="bars">${list.length ? list.slice(0, 8).map(([c, n]) => html`<div key=${c}>
+    <span title=${c}>${c}</span><b style=${{ width: n / top * 100 + '%', background: `var(${color})` }}></b><span>${n} · ${Math.round(n / all * 100)}%</span></div>`)
+    : html`<div class="hint">No jobs</div>`}</div>`;
 }

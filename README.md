@@ -185,7 +185,7 @@ From the Bina machine only, no token. Used by the `/admin` page.
 | `GET /admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
 | `POST /admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |
 | `POST /admin/tokens/<id>/revoke` | deletes the token |
-| `POST /admin/ocr` | same as `POST /ocr`, no token; the test page on `/` |
+| `POST /admin/ocr` | same as `POST /v2/ocr` plus `detector` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
 

@@ -7,14 +7,27 @@ export function Tiles({ stats: s, d }) {
   const okPct = d.t.map((_, i) => jobsPer[i] ? d.ok[i] / jobsPer[i] * 100 : null);
   const [ok, inc, err, acc] = ['--ok', '--inc', '--err', '--accent'].map(css);
   const tiles = [
-    ['Jobs', s.jobs_24h, jobsPer, acc],
-    ['Success', s.success_pct == null ? '-' : html`${s.success_pct}<small>%</small>`, okPct, ok],
-    ['Errors', s.errors_24h, d.error, err],
-    ['Incomplete', s.incomplete_24h, d.incomplete, inc],
-    ['Avg seconds', s.avg_seconds ?? '-', d.avg, acc],
-    ['p95 seconds', s.p95_seconds ?? '-', d.p95, acc],
-    ['Rejected, queue full', s.busy_24h, d.rejected, err],
+    ['Pages read', s.jobs_24h, 'Requests that reached the model', jobsPer, acc],
+    ['Fully read', s.success_pct == null ? '-' : html`${s.success_pct}<small>%</small>`, 'Finished with all their text', okPct, ok],
+    ['Failed', s.errors_24h, 'Crashed with an error, no text', d.error, err],
+    ['Cut short', s.incomplete_24h, 'Hit the time limit, text partial', d.incomplete, inc],
+    ['Typical time', s.avg_seconds == null ? '-' : html`${s.avg_seconds}<small> s</small>`, 'Average seconds per page', d.avg, acc],
+    ['Slow pages', s.p95_seconds == null ? '-' : html`${s.p95_seconds}<small> s</small>`, '1 in 20 pages takes this long or more', d.p95, acc],
+    ['Turned away', s.busy_24h, 'Refused because the queue was full', d.rejected, err],
   ];
   return html`<h2>Last 24 hours</h2>
-  <div class="grid">${tiles.map(([k, v, values, color]) => html`<${Card} key=${k} k=${k} v=${v}><${Spark} values=${values} color=${color}/><//>`)}</div>`;
+  <${Summary} s=${s}/>
+  <div class="grid tiles" style="margin-top:12px">${tiles.map(([k, v, hint, values, color]) => html`
+    <${Card} key=${k} k=${k} v=${v} hint=${hint}><${Spark} values=${values} color=${color}/><//>`)}</div>`;
+}
+
+// the tiles in one sentence, for someone who does not read charts
+function Summary({ s }) {
+  if (!s.jobs_24h) return html`<div class="summary">No pages read in the last 24 hours${s.busy_24h ? html`, but <b class="bad">${s.busy_24h}</b> were turned away` : ''}.</div>`;
+  const ok = s.jobs_24h - s.errors_24h - s.incomplete_24h;
+  return html`<div class="summary">
+    <b>${s.jobs_24h}</b> pages read, <b>${ok}</b> fully (${s.success_pct}%)${s.incomplete_24h ? html`, <b class="warn">${s.incomplete_24h}</b> cut short by the time limit` : ''}${s.errors_24h ? html`, <b class="bad">${s.errors_24h}</b> failed` : ''}.${' '}
+    A page usually takes <b>${s.avg_seconds} s</b>; the slowest ones take <b>${s.p95_seconds} s</b> or more.${' '}
+    ${s.busy_24h ? html`<b class="bad">${s.busy_24h}</b> requests were turned away because the queue was full.` : 'Nobody was turned away.'}
+  </div>`;
 }

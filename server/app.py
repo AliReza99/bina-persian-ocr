@@ -164,10 +164,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.ocr(url, v2=url.path == '/v2/ocr')
         if url.path == '/admin/ocr':  # the test page on /, from this machine
             self.who = 'test page'
-            return self.ocr(url)
+            return self.ocr(url, v2=True, debug=True)
         self.reply(404, NOT_FOUND)
 
-    def ocr(self, url, v2=False):
+    def ocr(self, url, v2=False, debug=False):
         task = parse_qs(url.query).get('task', ['ocr'])[0]
         if task not in ocr.PROMPTS:
             return self.reply(400, {'error': f'task must be one of {list(ocr.PROMPTS)}'})
@@ -189,11 +189,11 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:
-            self.run_job(task, image, size, v2)
+            self.run_job(task, image, size, v2, debug)
         finally:
             jobs.release()
 
-    def run_job(self, task, image, size, v2=False):
+    def run_job(self, task, image, size, v2=False, debug=False):
         ip = self.client_address[0]
         client = self.who  # the token's name: a client can't relabel itself
         job_id = jobs.start(client, ip, task, image, size)
@@ -217,7 +217,10 @@ class Handler(BaseHTTPRequestHandler):
             # after the model lock is released, so the next page reads on the GPU meanwhile
             started = time.monotonic()
             try:
-                extra['lines'] = align.lines(image, result['text'])
+                detector = [] if debug else None  # the test page also gets every detector box, to see misses
+                extra['lines'] = align.lines(image, result['text'], detector)
+                if debug:
+                    extra['detector'] = detector
             except Exception as e:  # boxes are extra: never fail a page that was read
                 print(f'align failed on job {job_id}: {e!r}', file=sys.stderr, flush=True)
                 extra['lines'] = []

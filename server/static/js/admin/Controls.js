@@ -14,12 +14,12 @@ export function Controls({ state, refresh }) {
   <div class="controls">
     <div class="card control">
       <div><div class="k">Requests</div><div class="v">${state.paused ? 'Paused' : 'Accepting'}</div>
-        <p>When paused, new requests get 503; running and queued jobs still finish.</p></div>
+        <p>Paused: new requests are refused; pages already running or waiting still finish.</p></div>
       <div class="act"><button class="primary" onClick=${toggle}>${state.paused ? 'Resume' : 'Pause'}</button></div>
     </div>
     <form class="card control" onSubmit=${e => { e.preventDefault(); setLimit(Number(sec)); }}>
       <div><div class="k">Time limit per job</div><div class="v">${state.max_seconds ? `${state.max_seconds} s` : 'No limit'}</div>
-        <p>Past it, the text read so far comes back as incomplete.</p></div>
+        <p>A page that takes longer returns what was read so far, marked cut short.</p></div>
       <div class="act">
         <label class="unit"><input type="number" min="5" max="3600" step="1" required placeholder="e.g. 90" aria-label="Time limit in seconds"
           value=${sec} onInput=${e => setSec(e.target.value)}/><span>s</span></label>

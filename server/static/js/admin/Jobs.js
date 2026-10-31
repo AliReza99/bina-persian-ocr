@@ -6,7 +6,7 @@ import { ago, kb, statusOf, STATUS_LABEL, when } from './util.js';
 const PAGE = 50;
 
 // tick: bumped by the page to force a reload (e.g. after Clear history)
-export function Jobs({ clients, tasks, tick }) {
+export function Jobs({ clients, tasks, tick, children }) {
   const [f, setF] = useState({ status: '', client: '', task: '', id: '', sort: 'recent' });
   const [offset, setOffset] = useState(0);
   const [fullTime, setFullTime] = useState(false);  // time column: relative by default, a click switches every row
@@ -18,10 +18,10 @@ export function Jobs({ clients, tasks, tick }) {
   // keep the current choice even when the chart range no longer lists it
   const options = (list, cur) => [...new Set(list.map(x => x[0]).concat(cur ? [cur] : []))].map(v => html`<option key=${v}>${v}</option>`);
 
-  return html`<h2>Jobs</h2>
+  return html`<h2>History <small>kept 30 days</small><span style="margin-inline-start:auto">${children}</span></h2>
   <div class="filters">
     <select aria-label="Status" value=${f.status} onChange=${filter('status')}>
-      <option value="">All statuses</option><option value="ok">OK</option><option value="incomplete">Incomplete</option>
+      <option value="">All statuses</option><option value="ok">OK</option><option value="incomplete">Cut short</option>
       <option value="error">Error</option><option value="running">Running</option>
     </select>
     <select aria-label="Client" value=${f.client} onChange=${filter('client')}><option value="">All clients</option>${options(clients, f.client)}</select>
