@@ -62,7 +62,7 @@ Tested on Linux. On other systems the process RAM card shows `-`.
 - **Last 24 hours**: jobs, success %, errors, incomplete, avg and p95 seconds, requests rejected because the queue was full.
 - **Trends** (1h / 24h / 7d): jobs per bucket, latency, seconds vs image size, top clients, task split.
 - **Jobs**: filter by status, client, task or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
-- **Pause / Resume**: pause rejects new `/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
+- **Pause / Resume**: pause rejects new `/v1/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
 - **Time limit**: the longest one job may use the model (5 to 3600 s), or no limit. Past it the text read so far comes back with `incomplete: true` and the model is freed for the next job. Kept across restarts.
 - **Clear history** (footer, click twice): deletes all jobs, thumbnails and stored text.
 
@@ -70,11 +70,11 @@ Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails
 
 ## API
 
-### `POST /ocr`
+### `POST /v1/ocr`
 
 Extract the text (Persian/English) from one image. One image runs at a time; up to 3 more wait, beyond that the server answers `503 busy`.
 
-**Auth**: `/ocr` and `/v2/ocr` need `Authorization: Bearer <token>`, always, even from the Bina machine. The token is a client token, made under *Client tokens* in `/admin`; its name labels every job it sends and can't be changed by the client. Each job also records the caller's IP. `/health` is open. `/docs` takes a client token or the Bina machine. Everything else (the UI, `/admin`) is only reachable from the Bina machine.
+**Auth**: `/v1/ocr` and `/v2/ocr` need `Authorization: Bearer <token>`, always, even from the Bina machine. The token is a client token, made under *Client tokens* in `/admin`; its name labels every job it sends and can't be changed by the client. Each job also records the caller's IP. `/health` is open. `/docs` takes a client token or the Bina machine. Everything else (the UI, `/admin`) is only reachable from the Bina machine.
 
 Images with a long edge over 2500 px are downscaled first; over 100 MP are rejected.
 
@@ -117,24 +117,24 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 **Examples**
 
 ```sh
-curl --data-binary @page.jpg http://127.0.0.1:8001/ocr
-curl --data-binary @page.jpg 'http://127.0.0.1:8001/ocr?task=markup'
+curl --data-binary @page.jpg http://127.0.0.1:8001/v1/ocr
+curl --data-binary @page.jpg 'http://127.0.0.1:8001/v1/ocr?task=markup'
 ```
 
 ```python
 import requests
-r = requests.post('http://127.0.0.1:8001/ocr', data=open('page.jpg', 'rb'))
+r = requests.post('http://127.0.0.1:8001/v1/ocr', data=open('page.jpg', 'rb'))
 print(r.json()['text'])
 ```
 
 ```js
-const r = await fetch('http://127.0.0.1:8001/ocr', { method: 'POST', body: file }); // file: Blob/File/Buffer
+const r = await fetch('http://127.0.0.1:8001/v1/ocr', { method: 'POST', body: file }); // file: Blob/File/Buffer
 const { text } = await r.json();
 ```
 
 ### `POST /v2/ocr`
 
-Same as `/ocr` (request, auth, queue, errors), plus where each text line sits on the image. Use it to draw or select lines on the photo. `/ocr` stays as it is.
+Same as `/v1/ocr` (request, auth, queue, errors), plus where each text line sits on the image. Use it to draw or select lines on the photo. `/v1/ocr` stays as it is.
 
 **Response 200**
 
@@ -179,7 +179,7 @@ From the Bina machine only, no token. Used by the `/admin` page.
 | `GET /admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `task`, `id`, `offset`, `limit` (default 50, max 200) |
 | `GET /admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
 | `GET /admin/thumb/<id>` | JPEG thumbnail |
-| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/ocr` and `/v2/ocr` |
+| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/v1/ocr` and `/v2/ocr` |
 | `POST /admin/limit` | `{"max_seconds": n}` (whole seconds, 5 to 3600) or `{"max_seconds": null}` for no limit |
 | `POST /admin/clear` | deletes all job history |
 | `GET /admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |

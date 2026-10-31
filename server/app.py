@@ -3,7 +3,7 @@
 Run:   .venv/bin/python server/app.py [--host 127.0.0.1] [--port 8001]
 UI:    open http://127.0.0.1:8001/  (admin: /admin, both only from this machine; make client tokens there)
 Docs:  http://127.0.0.1:8001/docs (README.md)
-API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/ocr
+API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/v1/ocr
 """
 import argparse, io, json, pathlib, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,7 +21,7 @@ MAX_BYTES = 30 * 2**20
 MAX_EDGE = 2500  # longer images are downscaled before inference
 Image.MAX_IMAGE_PIXELS = 50_000_000  # decompression-bomb guard: Pillow raises above 2x this
 PUBLIC = {'/health'}
-OCR_PATHS = {'/ocr', '/v2/ocr', '/whoami'}  # need a client token, even from this machine
+OCR_PATHS = {'/v1/ocr', '/v2/ocr', '/whoami'}  # need a client token, even from this machine
 DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
 # everything else is admin: this machine only, no login
 LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
@@ -160,11 +160,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
-        if url.path in ('/ocr', '/v2/ocr'):
+        if url.path in ('/v1/ocr', '/v2/ocr'):
             return self.ocr(url, v2=url.path == '/v2/ocr')
         if url.path == '/admin/ocr':  # the test page on /, from this machine
             self.who = 'test page'
-            return self.ocr(url, v2=True, debug=True)
+            v2 = parse_qs(url.query).get('api', ['/v2/ocr'])[0] != '/v1/ocr'
+            return self.ocr(url, v2=v2, debug=True)
         self.reply(404, NOT_FOUND)
 
     def ocr(self, url, v2=False, debug=False):

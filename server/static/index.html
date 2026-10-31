@@ -87,6 +87,7 @@
   textarea, pre { width:100%; height:100%; margin:0; border:0; padding:12px; resize:none; background:transparent; color:inherit; }
   textarea { font:inherit; line-height:1.9; unicode-bidi:plaintext; }
   pre { font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; }
+  .api pre { height:auto; } .api h2 { margin:12px 12px 0; }
   .empty { padding:24px; color:var(--muted); text-align:center; }
 
   @media (max-width:1000px) {
@@ -174,7 +175,7 @@ function Side({ item, rows, hot, setHot }) {
       <div class="stat"><b>${r ? rows.filter(x => x.state === 'guess').length : '–'}</b><span>Guessed</span></div>
     </div>
     <div class="tabs">
-      ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'Response']].map(([k, l]) => html`
+      ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'API']].map(([k, l]) => html`
         <button class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</button>`)}
       <span class="grow"></span>
       ${r && tab !== 'lines' && html`<button class="chip" onClick=${() => navigator.clipboard.writeText(copy)}>Copy</button>`}
@@ -182,7 +183,44 @@ function Side({ item, rows, hot, setHot }) {
     ${!r && html`<div class=${'empty' + (item?.error ? ' status err' : '')}>${empty}</div>`}
     ${r && tab === 'lines' && html`<${Lines} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>`}
     ${r && tab === 'text' && html`<div class="pane"><textarea readonly aria-label="Extracted text" value=${r.text}></textarea></div>`}
-    ${r && tab === 'json' && html`<div class="pane"><pre>${JSON.stringify(r, null, 2)}</pre></div>`}
+    ${r && tab === 'json' && html`<${Api} item=${item}/>`}
+  </div>`;
+}
+
+const TYPES = {
+  '/v1/ocr': `type OcrResponse = {
+  text: string;        // lines separated by \\n
+  incomplete: boolean; // part of the text may be missing
+  seconds: number;     // inference time
+};`,
+  '/v2/ocr': `type Point = [x: number, y: number]; // 0..1 of image width / height
+
+type OcrV2Response = {
+  text: string;
+  incomplete: boolean;
+  seconds: number;
+  lines: {
+    line: number;   // index into text.split('\\n')
+    box: [Point, Point, Point, Point]; // from top-left, clockwise
+    guess: boolean; // inferred from neighbouring lines
+  }[];
+  align_seconds: number;
+};`,
+};
+
+// what a client would send and get; detector boxes are a test-page extra, so left out
+function Api({ item }) {
+  const { detector, ...res } = item.result;
+  const call = `const res = await fetch('${location.origin}${item.api}${item.task === 'ocr' ? '' : '?task=' + item.task}', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer <client token>' },
+  body: file, // raw image bytes (${item.file.type}, ${(item.file.size / 1024).toFixed(0)} KB), no multipart
+});
+const data: ${item.api === '/v1/ocr' ? 'OcrResponse' : 'OcrV2Response'} = await res.json();`;
+  return html`<div class="pane api">
+    <h2>Request</h2><pre>${call}</pre>
+    <h2>Type</h2><pre>${TYPES[item.api]}</pre>
+    <h2>Response</h2><pre>${JSON.stringify(res, null, 2)}</pre>
   </div>`;
 }
 
@@ -192,6 +230,7 @@ function App() {
   const [items, setItems] = useState([]);  // shortcut: history lives in this tab only, lost on reload
   const [cur, setCur] = useState(null);
   const [task, setTask] = useState('ocr');
+  const [api, setApi] = useState('/v2/ocr');
   const [hot, setHot] = useState(null);
   const [over, setOver] = useState(false);
   const [show, setShow] = useState({ ok: true, guess: true, det: true, num: true });
@@ -214,9 +253,9 @@ function App() {
   const patch = (id, p) => setItems(xs => xs.map(x => x.id === id ? { ...x, ...p } : x));
 
   async function run(it) {
-    patch(it.id, { result: null, error: null, task });
+    patch(it.id, { result: null, error: null, task, api });
     try {
-      const res = await fetch('/admin/ocr?task=' + task, { method: 'POST', body: it.file });
+      const res = await fetch('/admin/ocr?task=' + task + '&api=' + api, { method: 'POST', body: it.file });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);
       patch(it.id, { result: data });
@@ -255,6 +294,8 @@ function App() {
       <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
       <select value=${task} onChange=${e => setTask(e.target.value)} aria-label="Output">
         <option value="ocr">Plain text</option><option value="markup">Markdown</option></select>
+      <select value=${api} onChange=${e => setApi(e.target.value)} aria-label="API">
+        <option value="/v2/ocr">/v2/ocr</option><option value="/v1/ocr">/v1/ocr</option></select>
       <button disabled=${!item || busy} onClick=${() => run(item)}>Run again</button>
       <span class="status">${busy ? 'Reading ' + item.name + '…' : ''}</span>
       <span class="grow"></span>

@@ -12,6 +12,7 @@ import numpy as np
 from rapidocr import LangRec, OCRVersion, RapidOCR
 
 PARAMS = {'Det.ocr_version': OCRVersion.PPOCRV5, 'Det.limit_side_len': 960, 'Det.limit_type': 'max',
+          'Det.score_mode': 'slow',  # fast scores a curved line by its bounding rect, mostly background: dropped
           'Rec.ocr_version': OCRVersion.PPOCRV4, 'Global.log_level': 'error', 'Global.text_score': 0}
 DETECT = RapidOCR(params=PARAMS)  # separate instance: use_rec=False sticks to the engine it is passed to
 ENGLISH = RapidOCR(params={**PARAMS, 'Rec.lang_type': LangRec.EN})
