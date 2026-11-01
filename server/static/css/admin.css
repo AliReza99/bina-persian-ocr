@@ -1,4 +1,4 @@
-/* same palette as the test page on / */
+/* same palette as the playground on / */
 :root { --bg:#f7f7f8; --fg:#18181b; --muted:#71717a; --card:#fff; --line:#e4e4e7; --accent:#2563eb;
         --ok:#16a34a; --inc:#d97706; --err:#dc2626; --s2:#7c3aed; }
 @media (prefers-color-scheme: dark) { :root { --bg:#0f0f11; --fg:#f4f4f5; --muted:#a1a1aa; --card:#18181b; --line:#2e2e33;
@@ -53,6 +53,10 @@ svg.spark { display:block; width:100%; height:36px; margin-top:6px; }
 .donut > div:first-child { width:120px; height:120px; border-radius:50%; flex:none;
   -webkit-mask:radial-gradient(circle, transparent 52%, #000 53%); mask:radial-gradient(circle, transparent 52%, #000 53%); }
 .dot { display:inline-block; width:10px; height:10px; border-radius:3px; margin-inline-end:6px; }
+nav { display:flex; gap:2px; margin-inline-end:6px; }
+nav a { padding:4px 12px; border-radius:7px; color:var(--muted); text-decoration:none; font-weight:500; }
+nav a:hover { color:var(--fg); background:var(--card); }
+nav a.on { color:var(--fg); background:var(--card); box-shadow:inset 0 -2px var(--accent); }
 header .meta { margin-inline-start:auto; color:var(--muted); display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
 .controls { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap:12px; }
 .control { display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; }

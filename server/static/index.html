@@ -3,92 +3,153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bina OCR</title>
+<title>Bina OCR · Playground</title>
 <style>
   :root {
-    --bg:#f7f7f8; --panel:#fff; --fg:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5;
+    --bg:#f7f7f8; --panel:#fff; --fg:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --code:#fafafa;
     --accent:#2563eb; --ok:#16a34a; --guess:#d97706; --miss:#dc2626; --det:#7c3aed;
+    --k:#9333ea; --s:#15803d; --num:#c2410c;
   }
   @media (prefers-color-scheme: dark) { :root {
-    --bg:#0f0f11; --panel:#18181b; --fg:#f4f4f5; --muted:#a1a1aa; --line:#2e2e33; --soft:#232327;
+    --bg:#0f0f11; --panel:#18181b; --fg:#f4f4f5; --muted:#a1a1aa; --line:#2e2e33; --soft:#232327; --code:#131316;
     --accent:#60a5fa; --ok:#4ade80; --guess:#fbbf24; --miss:#f87171; --det:#a78bfa;
+    --k:#c084fc; --s:#86efac; --num:#fdba74;
   } }
   * { box-sizing:border-box; }
   html, body { height:100%; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, "Vazirmatn", Tahoma, sans-serif; }
   #app { display:flex; flex-direction:column; height:100vh; }
-  button, select { font:inherit; padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--fg); cursor:pointer; }
-  button:hover:not(:disabled), select:hover { border-color:var(--muted); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button { font:inherit; padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--fg); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--muted); }
   button:disabled { opacity:.45; cursor:default; }
-  a { color:var(--muted); text-decoration:none; } a:hover { color:var(--fg); }
+  .mono, code, pre { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  kbd { font:11px ui-monospace, monospace; padding:1px 5px; border:1px solid currentColor; border-radius:4px; opacity:.75; }
 
-  header { display:flex; align-items:center; gap:8px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1 { font-size:15px; margin:0 12px 0 0; }
+  /* top bar: brand, page nav, server health */
+  header { display:flex; align-items:center; gap:16px; padding:0 16px; height:48px; background:var(--panel); border-bottom:1px solid var(--line); flex:none; }
+  header h1 { font-size:15px; margin:0; }
+  nav { display:flex; gap:2px; height:100%; }
+  nav a { display:flex; align-items:center; padding:0 12px; color:var(--muted); text-decoration:none; border-bottom:2px solid transparent; font-weight:500; }
+  nav a:hover { color:var(--fg); }
+  nav a.on { color:var(--fg); border-color:var(--accent); }
   header .grow { flex:1; }
-  .status { color:var(--muted); }
-  .status.err { color:var(--miss); }
+  .health { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .health i { width:8px; height:8px; border-radius:50%; background:var(--ok); }
+  .health.busy i { background:var(--guess); } .health.down i, .health.paused i { background:var(--miss); }
 
   .body { flex:1; display:flex; min-height:0; }
-  .side h2 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:4px 4px 8px; font-weight:600; }
 
+  /* left: the image with its overlay */
   .view { flex:1; min-width:0; display:flex; flex-direction:column; }
-  .tools { display:flex; gap:14px; align-items:center; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; color:var(--muted); font-size:13px; }
-  .tools label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+  .tools { display:flex; gap:14px; align-items:center; padding:0 16px; height:40px; border-bottom:1px solid var(--line); color:var(--muted); font-size:13px; flex:none; }
+  .tools .layers { display:flex; gap:4px; }
+  .tools .layers.off { opacity:.45; }
+  .tools .param { margin-inline-end:4px; }
+  .tools .grow { flex:1; }
   .swatch { width:10px; height:10px; border-radius:2px; display:inline-block; }
   .stage { flex:1; min-height:0; padding:16px; display:flex; justify-content:center; align-items:center; }
   .page { position:relative; max-width:100%; box-shadow:0 1px 3px rgba(0,0,0,.12); background:#fff; }
-  .page img { display:block; max-width:100%; max-height:calc(100vh - 130px); }  /* whole page in view, no scrolling */
+  .page img { display:block; max-width:100%; max-height:calc(100vh - 120px); }  /* whole page in view, no scrolling */
   .page svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .page polygon { vector-effect:non-scaling-stroke; stroke-width:1.5px; pointer-events:all; cursor:pointer; }
   polygon.ok { fill:color-mix(in srgb, var(--ok) 10%, transparent); stroke:var(--ok); }
   polygon.guess { fill:color-mix(in srgb, var(--guess) 12%, transparent); stroke:var(--guess); stroke-dasharray:5 3; }
   polygon.det { fill:color-mix(in srgb, var(--det) 14%, transparent); stroke:var(--det); stroke-dasharray:2 2; }
   polygon.hot { fill:color-mix(in srgb, var(--accent) 30%, transparent); stroke:var(--accent); stroke-width:2.5px; }
-  .tag { position:absolute; transform:translate(-100%, 0); font:600 10px/1 system-ui; padding:2px 3px; border-radius:3px; color:#fff; pointer-events:none; }
+  .tag { position:absolute; display:flex; align-items:center;  /* hangs off the right edge, clear of the RTL text */ font:600 10px/1 system-ui; padding:0 3px; color:var(--panel); pointer-events:none; }  /* panel color: white on light theme, dark on the bright dark-theme fills */
   .tag.ok { background:var(--ok); } .tag.guess { background:var(--guess); } .tag.hot { background:var(--accent); }
-
   .drop { margin:auto; width:min(420px, 90%); padding:40px 24px; text-align:center; border:2px dashed var(--line); border-radius:14px; background:var(--panel); color:var(--muted); cursor:pointer; }
+  .drop:hover { border-color:var(--accent); }
   .drop strong { display:block; color:var(--fg); font-size:16px; margin-bottom:4px; }
-  .over::after { content:"Drop to read"; position:fixed; inset:0; display:grid; place-items:center; font-size:22px; color:var(--accent);
+  .over::after { content:"Drop to load"; position:fixed; inset:0; display:grid; place-items:center; font-size:22px; color:var(--accent);
                  background:color-mix(in srgb, var(--accent) 10%, transparent); border:3px dashed var(--accent); pointer-events:none; z-index:9; }
 
+  /* right: request on top, response under it, read top to bottom */
   .side-wrap { position:relative; flex:none; display:flex; min-height:0; }
   .grip { position:absolute; inset-block:0; inset-inline-start:-3px; width:6px; cursor:col-resize; z-index:2; touch-action:none; }
   .grip:hover, .grip.on { background:var(--accent); }
   .side { flex:1; min-width:0; border-inline-start:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0; }
-  .stats { display:grid; grid-template-columns:repeat(4, 1fr); border-bottom:1px solid var(--line); }
-  .stat { padding:10px 12px; border-inline-end:1px solid var(--line); }
+  section { border-bottom:1px solid var(--line); }
+  .sec-h { display:flex; align-items:center; gap:8px; padding:10px 14px 0; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; }
+  .sec-h .grow { flex:1; }
+  .req { padding-bottom:12px; }
+  .urlbar { display:flex; align-items:center; margin:8px 14px 0; border:1px solid var(--line); border-radius:8px; background:var(--code); overflow:hidden; font-size:12.5px; }
+  .method { padding:6px 10px; font-weight:700; color:var(--ok); border-inline-end:1px solid var(--line); }
+  .url { flex:1; padding:6px 10px; white-space:nowrap; overflow:auto; scrollbar-width:none; }
+  .url .q { color:var(--muted); } .url .v { color:var(--accent); font-weight:600; }
+  .urlbar button { border:0; border-inline-start:1px solid var(--line); border-radius:0; background:none; color:var(--muted); font-size:12px; }
+  .kv { display:grid; grid-template-columns:64px 1fr; gap:6px 10px; margin:10px 14px 0; align-items:center; font-size:13px; }
+  .kv > span:nth-child(odd) { color:var(--muted); font-size:12px; }
+  .params { display:flex; gap:8px; flex-wrap:wrap; }
+  .param { display:flex; align-items:center; gap:7px; padding:3px 10px 3px 4px; border-radius:99px; cursor:pointer; font-size:12.5px; user-select:none; }
+  .param input { appearance:none; width:26px; height:16px; border-radius:99px; background:var(--line); margin:0; position:relative; cursor:pointer; transition:background .15s; }
+  .param input::after { content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .param input:checked { background:var(--accent); } .param input:checked::after { transform:translateX(10px); }
+  .file { display:flex; align-items:center; gap:8px; min-width:0; }
+  .file .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file small { color:var(--muted); white-space:nowrap; }
+  .file button { padding:2px 8px; font-size:12px; margin-inline-start:auto; }
+  .send { display:flex; align-items:center; justify-content:center; gap:10px; width:calc(100% - 28px); margin:12px 14px 0; padding:10px; font-size:15px; font-weight:600;
+          background:var(--accent); border-color:var(--accent); color:#fff; border-radius:8px; }
+  .send:hover:not(:disabled) { filter:brightness(1.08); border-color:var(--accent); }
+  .send.running { background:var(--soft); border-color:var(--line); color:var(--fg); opacity:1; }
+  .spin { width:14px; height:14px; border:2px solid var(--muted); border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(1turn); } }
+
+  /* snippet: one framed block, language tabs as its header */
+  .code { margin:12px 14px 0; border:1px solid var(--line); border-radius:8px; background:var(--code); overflow:hidden; }
+  .code-h { display:flex; align-items:center; justify-content:space-between; padding:0 6px; border-bottom:1px solid var(--line); }
+  .langs { display:flex; }
+  .langs button, .tabs button { border:0; border-radius:5px; background:none; color:var(--muted); padding:2px 8px; font-size:12px; }
+  .langs button { border-radius:0; padding:7px 10px; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .langs button.on { color:var(--fg); border-color:var(--accent); }
+  .code-h .copy { border:0; background:none; color:var(--muted); }
+  .code-h .copy:hover { color:var(--fg); }
+  .code pre { margin:0; padding:10px 12px; font-size:12px; line-height:1.6; overflow:auto; white-space:pre; }
+  .c-f { color:var(--accent); }
+  .copy { padding:2px 8px; font-size:12px; text-transform:none; letter-spacing:0; font-weight:400; }
+
+  .res { flex:1; display:flex; flex-direction:column; min-height:0; border:0; }
+  .status { padding:1px 7px; border-radius:5px; font:600 12px ui-monospace, monospace; letter-spacing:0; background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok); }
+  .status.err { background:color-mix(in srgb, var(--miss) 15%, transparent); color:var(--miss); }
+  .stale { margin:8px 14px 0; padding:4px 10px; border-radius:6px; font-size:12px; color:var(--guess); background:color-mix(in srgb, var(--guess) 10%, transparent); }
+  .stats { display:grid; grid-template-columns:repeat(4, 1fr); margin:8px 14px 0; border:1px solid var(--line); border-radius:8px; }
+  .stat { padding:6px 12px; border-inline-end:1px solid var(--line); }
   .stat:last-child { border:0; }
-  .stat b { display:block; font-size:18px; font-variant-numeric:tabular-nums; }
-  .stat span { font-size:11px; color:var(--muted); }
-  .tabs { display:flex; gap:2px; padding:8px 12px 0; border-bottom:1px solid var(--line); }
-  .tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; color:var(--muted); padding:6px 10px; }
+  .stat span { display:block; font-size:11px; color:var(--muted); }
+  .stat b { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; }
+  /* same underline tabs as the snippet languages */
+  .tabs { display:flex; padding:0 8px; margin-top:12px; border-bottom:1px solid var(--line); align-items:center; }
+  .tabs button { font-size:13px; padding:8px 10px; border-radius:0; border-bottom:2px solid transparent; margin-bottom:-1px; }
   .tabs button.on { color:var(--fg); border-color:var(--accent); }
   .tabs .grow { flex:1; }
-  .filters { display:flex; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); }
-  .chip { font-size:12px; padding:2px 10px; border-radius:99px; }
-  .chip.on { background:var(--fg); color:var(--panel); border-color:var(--fg); }
+  .tabs .copy { border:0; background:none; color:var(--muted); }
+  .chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:1px 9px; border-radius:99px; border:0; background:none; color:var(--muted); }
+  .chip.on { background:var(--soft); color:var(--fg); }
+  .chip b { font-weight:600; font-variant-numeric:tabular-nums; }
   .pane { flex:1; overflow:auto; min-height:0; }
-  .row { display:grid; grid-template-columns:34px 10px 1fr; gap:8px; align-items:baseline; padding:5px 12px; border-bottom:1px solid var(--soft); cursor:pointer; }
+  .row { direction:rtl; display:grid; grid-template-columns:26px 1fr; gap:10px; align-items:baseline; padding:5px 14px; border-bottom:1px solid var(--soft); cursor:pointer; }
   .row:hover, .row.hot { background:color-mix(in srgb, var(--accent) 8%, transparent); }
   .row.miss { background:color-mix(in srgb, var(--miss) 7%, transparent); }
   .row.miss.hot { background:color-mix(in srgb, var(--miss) 15%, transparent); }
-  .row .n { color:var(--muted); font-size:12px; text-align:end; font-variant-numeric:tabular-nums; }
-  .dot { width:8px; height:8px; border-radius:50%; align-self:center; }
-  .dot.ok { background:var(--ok); } .dot.guess { background:var(--guess); } .dot.miss { background:var(--miss); }
+  /* number badge styled like the tags on the image, colored by box state */
+  .row .n { justify-self:start; align-self:start; margin-top:5px; min-width:20px; padding:3px 4px; font:600 11px/1 system-ui; text-align:center; color:var(--panel); font-variant-numeric:tabular-nums; }
+  .n.ok { background:var(--ok); } .n.guess { background:var(--guess); } .n.miss { background:var(--miss); }
+  .row.hot .n { background:var(--accent); }
+  .dot { width:8px; height:8px; border-radius:2px; align-self:center; }
   .row .t { unicode-bidi:plaintext; line-height:1.8; overflow-wrap:anywhere; }
-  .det-row .t { color:var(--muted); }
-  textarea, pre { width:100%; height:100%; margin:0; border:0; padding:12px; resize:none; background:transparent; color:inherit; }
-  textarea { font:inherit; line-height:1.9; unicode-bidi:plaintext; }
-  pre { font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; }
-  .api pre { height:auto; } .api h2 { margin:12px 12px 0; }
-  .empty { padding:24px; color:var(--muted); text-align:center; }
+  textarea { display:block; width:100%; height:100%;  /* block: an inline textarea leaves a baseline gap that makes .pane scroll too */ margin:0; border:0; padding:12px 14px; resize:none; background:transparent; color:inherit; font:inherit; line-height:1.9; unicode-bidi:plaintext; }
+  .pane > pre { margin:0; padding:12px 14px; font-size:12px; line-height:1.5; white-space:pre; width:max-content; min-width:100%; }  /* wrapped RTL strings in LTR JSON read scrambled */
+  .j-k { color:var(--k); } .j-s { color:var(--s); } .j-n { color:var(--num); } .j-c { color:var(--muted); }
+  .note { padding:8px 14px 0; font-size:12px; color:var(--muted); }
+  .note a { color:var(--accent); }
+  .empty { padding:32px 24px; color:var(--muted); text-align:center; }
+  .empty.err { color:var(--miss); }
 
   @media (max-width:1000px) {
     #app { height:auto; } .body { flex-direction:column; }
     .side-wrap { width:auto !important; } .grip { display:none; }
-    .side { width:auto; border:0; border-top:1px solid var(--line); } .pane { max-height:70vh; }
+    .side { border:0; border-top:1px solid var(--line); } .pane { max-height:70vh; }
   }
 </style>
 </head>
@@ -98,6 +159,10 @@
 import { html, render, useEffect, useRef, useState } from '/vendor/htm-preact.js';
 
 const DOT = { ok: 'Matched', guess: 'Guessed', miss: 'No box' };
+const load = (k, d) => { try { return localStorage[k] ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage[k] = v; } catch {} };
+const kb = n => n < 1024 ? n + ' B' : n < 2**20 ? (n / 1024).toFixed(1) + ' KB' : (n / 2**20).toFixed(1) + ' MB';
+const sec = s => s.toFixed(2) + ' s';
 
 // every non-empty OCR line with its box state: ok / guess / miss
 function rowsOf(r) {
@@ -111,7 +176,88 @@ function rowsOf(r) {
 // detector boxes no line was matched to, keyed 'd<index>' so they share the hover state with lines
 const unused = r => (r?.detector || []).map((d, i) => ({ ...d, k: 'd' + i })).filter(d => !d.used);
 const pts = box => box.map(p => p.join(',')).join(' ');
-const corner = box => ({ left: Math.max(...box.map(p => p[0])) * 100 + '%', top: Math.min(...box.map(p => p[1])) * 100 + '%' });
+// tag spans the box's right edge: top-right to bottom-right corner (box goes clockwise from top-left)
+const corner = ([, [x1, y1], [x2, y2]]) => ({ left: Math.max(x1, x2) * 100 + '%', top: y1 * 100 + '%', height: (y2 - y1) * 100 + '%' });
+
+// params always spelled out, so a toggle visibly changes the URL
+const query = p => `boxes=${p.boxes ? 1 : 0}&masked=${p.masked ? 1 : 0}`;
+const endpoint = p => `${location.origin}/api/v1/ocr?${query(p)}`;
+
+const SNIPPETS = {
+  curl: (p, f) => `curl -X POST '${endpoint(p)}' \\
+  -H "Authorization: Bearer $BINA_TOKEN" \\
+  --data-binary @${f}`,
+  js: (p, f) => `const res = await fetch('${endpoint(p)}', {
+  method: 'POST',
+  headers: { Authorization: \`Bearer \${BINA_TOKEN}\` },
+  body: file, // raw bytes of ${f}: Blob, File or Buffer, no multipart
+});
+if (!res.ok) throw new Error((await res.json()).error);
+const data = await res.json(); // { text, incomplete, seconds${p.boxes ? ', lines, align_seconds' : ''} }`,
+  py: (p, f) => `import os, requests
+
+r = requests.post(
+    '${location.origin}/api/v1/ocr',
+    params={'boxes': ${p.boxes ? 1 : 0}, 'masked': ${p.masked ? 1 : 0}},
+    headers={'Authorization': f"Bearer {os.environ['BINA_TOKEN']}"},
+    data=open('${f}', 'rb'),  # raw bytes, no multipart
+)
+r.raise_for_status()
+print(r.json()['text'])`,
+};
+
+const TYPES = {
+  false: `type OcrResponse = {
+  text: string;        // lines separated by \\n
+  incomplete: boolean; // part of the text may be missing
+  seconds: number;     // inference time (GPU)
+};`,
+  true: `type Point = [x: number, y: number]; // 0..1 of image width / height
+
+type OcrResponse = {
+  text: string;        // lines separated by \\n
+  incomplete: boolean; // part of the text may be missing
+  seconds: number;     // inference time (GPU)
+  lines: {
+    line: number;   // index into text.split('\\n')
+    box: [Point, Point, Point, Point]; // from top-left, clockwise
+    guess: boolean; // inferred from neighbouring lines
+  }[];
+  align_seconds: number; // locating lines (CPU), after inference
+};`,
+};
+
+// tiny JSON highlighter: input is our own JSON.stringify output, escaped before tagging
+function highlight(json) {
+  const esc = json.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return esc.replace(/("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g,
+    (m, s, colon, lit) => s ? `<span class="${colon ? 'j-k' : 'j-s'}">${s}</span>${colon || ''}` : `<span class="${lit ? 'j-c' : 'j-n'}">${m}</span>`);
+}
+
+// same idea for the snippets and the Type tab: comments, strings, keywords, CLI flags, numbers; text between tokens is escaped too
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const TOKENS = /(\/\/.*|#.*)|('(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\b(const|await|new|if|throw|import|def|return|not|None|True|False|type|string|number|boolean)\b|(\s--?[a-zA-Z][\w-]*)|(?<![\w@.-])(\d+)\b/g;
+function hlCode(code) {
+  let out = '', i = 0;
+  for (const m of code.matchAll(TOKENS)) {
+    const cls = m[1] ? 'j-c' : m[2] ? 'j-s' : m[3] ? 'j-k' : m[4] ? 'c-f' : 'j-n';
+    out += esc(code.slice(i, m.index)) + `<span class="${cls}">${esc(m[0])}</span>`;
+    i = m.index + m[0].length;
+  }
+  return out + esc(code.slice(i));
+}
+
+function Health() {
+  const [h, setH] = useState(null);
+  useEffect(() => {
+    const poll = () => fetch('/health').then(r => r.json()).then(setH, () => setH({ status: 'down' }));
+    poll(); const t = setInterval(poll, 3000); return () => clearInterval(t);
+  }, []);
+  if (!h) return null;
+  const [cls, label] = h.status === 'down' ? ['down', 'server unreachable'] : h.status === 'paused' ? ['paused', 'paused'] :
+    h.busy ? ['busy', `busy${h.waiting ? ` · ${h.waiting} waiting` : ''}`] : ['', 'ready'];
+  return html`<span class=${'health ' + cls} title="GET /health, every 3 s"><i></i>${label}${h.device ? ` · ${h.device} · v${h.version}` : ''}</span>`;
+}
 
 function Page({ item, rows, show, hot, setHot }) {
   const det = unused(item.result);
@@ -129,184 +275,216 @@ function Page({ item, rows, show, hot, setHot }) {
 }
 
 function Lines({ item, rows, hot, setHot }) {
-  const [filter, setFilter] = useState('all');
   const ref = useRef();
   useEffect(() => { ref.current?.querySelector('.row.hot')?.scrollIntoView({ block: 'nearest' }); }, [hot]);
-  const shown = filter === 'all' ? rows : rows.filter(r => r.state === filter);
-  const det = unused(item.result);
+  if (!item.result.lines) return html`<div class="empty">Sent with <code>boxes=0</code>: text only, no lines to place.</div>`;
   return html`
-    <div class="filters">
-      ${['all', 'miss', 'guess', 'ok'].map(f => html`
-        <button class=${'chip' + (filter === f ? ' on' : '')} onClick=${() => setFilter(f)}>
-          ${f === 'all' ? 'All' : DOT[f]} ${f === 'all' ? rows.length : rows.filter(r => r.state === f).length}</button>`)}
-      <button class=${'chip' + (filter === 'det' ? ' on' : '')} onClick=${() => setFilter('det')}>Unused boxes ${det.length}</button>
-    </div>
     <div class="pane" ref=${ref}>
-      ${filter === 'det'
-        ? det.map(d => html`<div class=${'row det-row' + (hot === d.k ? ' hot' : '')} onMouseEnter=${() => setHot(d.k)} onMouseLeave=${() => setHot(null)}><span class="n"></span><span class="dot" style="background:var(--det)"></span><span class="t">${d.read || '(no read)'}</span></div>`)
-        : shown.map(r => html`
-          <div class=${'row ' + (r.state === 'miss' ? 'miss ' : '') + (hot === r.i ? 'hot' : '')} title=${DOT[r.state]}
-            onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}>
-            <span class="n">${r.i + 1}</span><span class=${'dot ' + r.state}></span><span class="t">${r.t}</span>
-          </div>`)}
-      ${!shown.length && filter !== 'det' && html`<div class="empty">Nothing here</div>`}
+      ${rows.map(r => html`
+        <div class=${'row ' + (r.state === 'miss' ? 'miss ' : '') + (hot === r.i ? 'hot' : '')} title=${DOT[r.state]}
+          onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}>
+          <span class=${'n ' + r.state}>${r.i + 1}</span><span class="t">${r.t}</span>
+        </div>`)}
+      ${!rows.length && html`<div class="empty">Nothing here</div>`}
     </div>`;
 }
 
-function Side({ item, rows, hot, setHot }) {
-  const [tab, setTab] = useState('text');
-  const r = item?.result;
-  const placed = rows.filter(x => x.state !== 'miss').length;
-  const copy = r && (tab === 'json' ? JSON.stringify(r, null, 2) : r.text);
-  // same layout before, during and after a read, with a note where the result will go
-  const empty = !item ? 'Open an image to see its text here' : item.error ? item.error : item.running ? 'Reading…' : 'Press Run to read it';
-  return html`<div class="side">
-    <div class="stats">
-      <div class="stat"><b>${r ? r.seconds + 's' : '–'}</b><span>OCR${r?.incomplete ? ' · incomplete' : ''}</span></div>
-      <div class="stat"><b>${r?.align_seconds != null ? r.align_seconds + 's' : '–'}</b><span>Boxes</span></div>
-      <div class="stat"><b style=${r?.lines && placed < rows.length ? 'color:var(--miss)' : ''}>${r?.lines ? `${placed}/${rows.length}` : '–'}</b><span>Lines placed</span></div>
-      <div class="stat"><b>${r?.lines ? rows.filter(x => x.state === 'guess').length : '–'}</b><span>Guessed</span></div>
-    </div>
-    <div class="tabs">
-      ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'API']].map(([k, l]) => html`
-        <button class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</button>`)}
-      <span class="grow"></span>
-      ${r && tab !== 'lines' && html`<button class="chip" onClick=${() => navigator.clipboard.writeText(copy)}>Copy</button>`}
-    </div>
-    ${!r && html`<div class=${'empty' + (item?.error ? ' status err' : '')}>${empty}</div>`}
-    ${r && tab === 'lines' && html`<${Lines} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>`}
-    ${r && tab === 'text' && html`<div class="pane"><textarea readonly aria-label="Extracted text" value=${r.text}></textarea></div>`}
-    ${r && tab === 'json' && html`<${Api} item=${item}/>`}
-  </div>`;
+function Copy({ text, label = 'Copy' }) {
+  const [done, setDone] = useState(false);
+  return html`<button class="copy" onClick=${e => { e.preventDefault(); navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }}>${done ? 'Copied' : label}</button>`;
 }
 
-const TYPES = {
-  false: `type OcrResponse = {
-  text: string;        // lines separated by \\n
-  incomplete: boolean; // part of the text may be missing
-  seconds: number;     // inference time
-};`,
-  true: `type Point = [x: number, y: number]; // 0..1 of image width / height
+function Request({ item, params, setParams, busy, elapsed, run, pick }) {
+  const [lang, setLang] = useState(() => load('lang', 'curl'));
+  const f = item?.name.replace(/\s/g, '_') || 'page.jpg';
+  const snippet = SNIPPETS[lang](params, f);
+  const set = (k, v) => setParams(p => ({ ...p, [k]: v }));
+  const desc = { boxes: ['line boxes', '+0.3 to 3 s CPU'], masked: ['old decoding', '~1.75x slower'] };
+  return html`<section class="req">
+    <div class="sec-h">Request</div>
+    <div class="urlbar mono">
+      <span class="method">POST</span>
+      <span class="url">/api/v1/ocr<span class="q">?</span>${['boxes', 'masked'].map((k, i) => html`${i ? html`<span class="q">&</span>` : ''}<span class="q">${k}=</span><span class="v">${params[k] ? 1 : 0}</span>`)}</span>
+      <${Copy} text=${endpoint(params)} label="Copy URL"/>
+    </div>
+    <div class="kv">
+      <span>Params</span>
+      <div class="params">
+        ${['boxes', 'masked'].map(k => html`<label class="param" title=${desc[k].join(', ')}>
+          <input type="checkbox" checked=${params[k]} onChange=${e => set(k, e.target.checked)}/><span class="mono">${k}</span></label>`)}
+      </div>
+      <span>Body</span>
+      <div class="file">
+        ${item ? html`<span class="name mono" title=${item.name}>${item.name}</span><small>${item.file.type || 'image'} · ${kb(item.file.size)}${item.w ? ` · ${item.w}×${item.h}` : ''}</small>`
+               : html`<small>no image yet: drop, paste or</small>`}
+        <button onClick=${pick}>${item ? 'Change' : 'Choose'}</button>
+      </div>
+    </div>
+    <div class="code">
+      <div class="code-h">
+        <span class="langs" role="tablist" aria-label="Snippet language">
+          ${[['curl', 'cURL'], ['js', 'JavaScript'], ['py', 'Python']].map(([k, l]) => html`
+            <button role="tab" aria-selected=${lang === k} class=${lang === k ? 'on' : ''} onClick=${() => { setLang(k); save('lang', k); }}>${l}</button>`)}
+        </span>
+        <${Copy} text=${snippet}/>
+      </div>
+      <pre dangerouslySetInnerHTML=${{ __html: hlCode(snippet) }}></pre>
+    </div>
+    <button class=${'send' + (busy ? ' running' : '')} disabled=${!item || busy} onClick=${run}>
+      ${busy ? html`<span class="spin"></span>Waiting for response… ${sec(elapsed)}` : html`▶ Send request <kbd>Ctrl ↵</kbd>`}
+    </button>
+  </section>`;
+}
 
-type OcrResponse = {
-  text: string;        // lines separated by \\n
-  incomplete: boolean; // part of the text may be missing
-  seconds: number;     // inference time
-  lines: {
-    line: number;   // index into text.split('\\n')
-    box: [Point, Point, Point, Point]; // from top-left, clockwise
-    guess: boolean; // inferred from neighbouring lines
-  }[];
-  align_seconds: number;
-};`,
-};
-
-// what a client would send and get; detector boxes are a test-page extra, so left out
-function Api({ item }) {
-  const { detector, ...res } = item.result;
-  const query = [!item.boxes && 'boxes=0', item.masked && 'masked=1'].filter(Boolean).join('&');
-  const call = `const res = await fetch('${location.origin}/api/v1/ocr${query ? '?' + query : ''}', {
-  method: 'POST',
-  headers: { Authorization: 'Bearer <client token>' },
-  body: file, // raw image bytes (${item.file.type}, ${(item.file.size / 1024).toFixed(0)} KB), no multipart
-});
-const data: OcrResponse = await res.json();`;
-  return html`<div class="pane api">
-    <h2>Request</h2><pre>${call}</pre>
-    <h2>Type</h2><pre>${TYPES[item.boxes]}</pre>
-    <h2>Response</h2><pre>${JSON.stringify(res, null, 2)}</pre>
-  </div>`;
+function Response({ item, params, rows, hot, setHot, busy }) {
+  const [tab, setTab] = useState(() => load('tab', 'text'));
+  const pick = t => { setTab(t); save('tab', t); };
+  const r = item?.result;
+  const { detector, ...body } = r || {};  // detector boxes are a test-page extra, a client never gets them
+  // pretty, but each point and box on one line: [[x, y], ...] instead of a dozen lines per box
+  const json = r && JSON.stringify(body, null, 2)
+    .replace(/\[\s+(-?[\d.e-]+),\s+(-?[\d.e-]+)\s+\]/g, '[$1, $2]')
+    .replace(/\[\s+((?:\[[^\[\]]*\],?\s*)+)\]/g, (m, inner) => '[' + inner.trim().split(/,\s+(?=\[)/).join(', ') + ']');
+  const stale = item?.sent && query(item.sent) !== query(params);
+  return html`<section class="res">
+    <div class="sec-h">Response<span class="grow"></span>
+      ${r?.incomplete && html`<span class="status err" title="Part of the text may be missing">incomplete</span>`}
+      ${item?.code && html`<span class=${'status' + (item.code >= 400 ? ' err' : '')}>${item.code}${item.code === 200 ? ' OK' : ''}</span>`}
+    </div>
+    ${stale && !busy && html`<div class="stale">Sent with <code>${query(item.sent)}</code>, params changed since</div>`}
+    ${r && html`
+      <div class="stats" title="Total is measured in this browser; OCR and Boxes are the server's seconds and align_seconds, one after the other">
+        <div class="stat"><span>Total</span><b>${sec(item.total)}</b></div>
+        <div class="stat"><span>OCR · GPU</span><b>${sec(r.seconds)}</b></div>
+        <div class="stat"><span>Boxes · CPU</span><b>${r.align_seconds != null ? sec(r.align_seconds) : '–'}</b></div>
+        <div class="stat"><span>Size</span><b>${kb(new Blob([JSON.stringify(body)]).size)}</b></div>
+      </div>`}
+    ${!r && !busy && html`<div class=${'empty' + (item?.error ? ' err' : '')}>${
+      item?.error ? item.error : item ? 'Press Send to read this image' : 'Choose an image, then press Send'}</div>`}
+    ${r && html`
+      <div class="tabs">
+        ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'JSON'], ['type', 'Type']].map(([k, l]) => html`
+          <button class=${tab === k ? 'on' : ''} onClick=${() => pick(k)}>${l}</button>`)}
+        <span class="grow"></span>
+        ${tab === 'text' && html`<${Copy} text=${r.text}/>`}${tab === 'json' && html`<${Copy} text=${json}/>`}
+      </div>
+      ${tab === 'lines' && html`<${Lines} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>`}
+      ${tab === 'text' && html`<div class="pane"><textarea readonly aria-label="Extracted text" value=${r.text}></textarea></div>`}
+      ${tab === 'json' && html`<div class="pane"><pre dangerouslySetInnerHTML=${{ __html: highlight(json) }}></pre></div>`}
+      ${tab === 'type' && html`<div class="pane"><div class="note">Response shape for <code>boxes=${params.boxes ? 1 : 0}</code>. Full reference in <a href="/docs">API docs</a>.</div><pre dangerouslySetInnerHTML=${{ __html: hlCode(TYPES[params.boxes]) }}></pre></div>`}`}
+  </section>`;
 }
 
 let nextId = 0;
 
 function App() {
-  const [items, setItems] = useState([]);  // only the latest image is kept
-  const [cur, setCur] = useState(null);
-  const [boxes, setBoxes] = useState(true);
-  const [masked, setMasked] = useState(false);
+  const [item, setItem] = useState(null);  // only the latest image is kept
+  const [params, setParams] = useState({ boxes: true, masked: false });
   const [hot, setHot] = useState(null);
   const [over, setOver] = useState(false);
-  const [show, setShow] = useState({ ok: true, guess: true, det: true, num: true });
+  const [show, setShow] = useState({ all: true, ok: true, guess: true, det: true, num: true });
+  const [elapsed, setElapsed] = useState(0);
   const input = useRef();
-  const [width, setWidth] = useState(() => { try { return +localStorage.sideWidth || 460; } catch { return 460; } });
+  const [width, setWidth] = useState(() => +load('sideWidth', 480));
   const [resizing, setResizing] = useState(false);
+  const busy = !!item?.running;
+  const pick = () => input.current.click();
 
   function resize(e) {  // drag the panel's left edge; the width is remembered in this browser
     e.preventDefault(); setResizing(true);
     let w = width;
-    const move = ev => { w = Math.min(Math.max(innerWidth - ev.clientX, 300), innerWidth * .7); setWidth(w); };
+    const move = ev => { w = Math.min(Math.max(innerWidth - ev.clientX, 380), innerWidth * .7); setWidth(w); };
     const up = () => {
       setResizing(false);
       removeEventListener('pointermove', move); removeEventListener('pointerup', up);
-      try { localStorage.sideWidth = Math.round(w); } catch {}
+      save('sideWidth', Math.round(w));
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   }
 
-  const patch = (id, p) => setItems(xs => xs.map(x => x.id === id ? { ...x, ...p } : x));
+  const patch = (id, p) => setItem(x => x?.id === id ? { ...x, ...p } : x);
 
-  async function run(it) {
-    patch(it.id, { result: null, error: null, running: true, boxes, masked });
+  async function run() {
+    if (!item || busy) return;
+    const it = item, sent = { ...params }, t0 = performance.now();
+    patch(it.id, { result: null, error: null, code: null, total: null, running: true, sent });
+    // same handler as /api/v1/ocr, minus the token, plus the detector boxes
     try {
-      const res = await fetch('/api/admin/ocr?' + (boxes ? '' : 'boxes=0&') + (masked ? 'masked=1' : ''), { method: 'POST', body: it.file });
+      const res = await fetch('/api/admin/ocr?' + query(sent), { method: 'POST', body: it.file });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.status);
-      patch(it.id, { result: data, running: false });
+      const total = (performance.now() - t0) / 1000;
+      if (!res.ok) return patch(it.id, { error: `${res.status}: ${data.error || 'request failed'}`, code: res.status, total, running: false });
+      patch(it.id, { result: data, code: res.status, total, running: false });
     } catch (e) {
-      patch(it.id, { error: 'Error: ' + e.message, running: false });
+      patch(it.id, { error: 'Network error: ' + e.message, running: false });
     }
   }
 
   function add(file) {
     if (!file?.type.startsWith('image/')) return;
-    const it = { id: nextId++, file, name: file.name || 'pasted image', url: URL.createObjectURL(file), time: new Date() };
-    setItems(xs => { xs.forEach(x => URL.revokeObjectURL(x.url)); return [it]; });
-    setCur(it.id); setHot(null);
+    const it = { id: nextId++, file, name: file.name || 'pasted.png', url: URL.createObjectURL(file) };
+    setItem(x => { x && URL.revokeObjectURL(x.url); return it; });
+    setHot(null);
+    const img = new Image();
+    img.onload = () => patch(it.id, { w: img.naturalWidth, h: img.naturalHeight });
+    img.src = it.url;
   }
 
-  useEffect(() => {  // drop or paste anywhere on the page
+  useEffect(() => {  // live timer while waiting
+    if (!busy) return;
+    const t0 = performance.now(); setElapsed(0);
+    const t = setInterval(() => setElapsed((performance.now() - t0) / 1000), 100);
+    return () => clearInterval(t);
+  }, [busy]);
+
+  useEffect(() => {  // drop or paste anywhere on the page, Ctrl+Enter sends
     const drag = e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setOver(true); } };
     const leave = e => { if (!e.relatedTarget) setOver(false); };
     const drop = e => { e.preventDefault(); setOver(false); add(e.dataTransfer.files[0]); };
     const paste = e => add([...e.clipboardData.files][0]);
-    addEventListener('dragover', drag); addEventListener('dragleave', leave); addEventListener('drop', drop); addEventListener('paste', paste);
-    return () => { removeEventListener('dragover', drag); removeEventListener('dragleave', leave); removeEventListener('drop', drop); removeEventListener('paste', paste); };
+    const key = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+      else if (e.key === 'o' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.matches('input:not([type=checkbox]), textarea')) setShow(s => ({ ...s, all: !s.all }));
+    };
+    addEventListener('dragover', drag); addEventListener('dragleave', leave); addEventListener('drop', drop); addEventListener('paste', paste); addEventListener('keydown', key);
+    return () => { removeEventListener('dragover', drag); removeEventListener('dragleave', leave); removeEventListener('drop', drop); removeEventListener('paste', paste); removeEventListener('keydown', key); };
   });
 
-  const item = items.find(x => x.id === cur);
   const rows = item?.result ? rowsOf(item.result) : [];
-  const busy = !!item?.running;
   const toggle = k => setShow(s => ({ ...s, [k]: !s[k] }));
-  const legend = [['ok', 'Matched', 'var(--ok)'], ['guess', 'Guessed', 'var(--guess)'], ['det', 'Unused detector box', 'var(--det)'], ['num', 'Line numbers']];
+  const count = { ok: rows.filter(r => r.box && r.state === 'ok').length, guess: rows.filter(r => r.box && r.state === 'guess').length, det: unused(item?.result).length };
+  const legend = [['ok', 'Matched', 'var(--ok)'], ['guess', 'Guessed', 'var(--guess)'], ['det', 'Unused boxes', 'var(--det)'], ['num', '# Numbers']];
+  const noBoxes = !item?.result?.lines;
 
   return html`<div id="app" class=${over ? 'over' : ''}>
     <header>
       <h1>Bina OCR</h1>
-      <button class="primary" onClick=${() => input.current.click()}>Open image</button>
-      <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
-      <label title="Also find where each line sits on the image (about 0.3 to 3 s more)"><input type="checkbox" checked=${boxes} onChange=${e => setBoxes(e.target.checked)}/> Boxes</label>
-      <label title="Old masked decoding: about 1.75x slower; text can differ on hard pages"><input type="checkbox" checked=${masked} onChange=${e => setMasked(e.target.checked)}/> Masked</label>
-      <button disabled=${!item || busy} onClick=${() => run(item)}>${item?.result || item?.error ? 'Run again' : 'Run'}</button>
-      <span class="status">${busy ? 'Reading ' + item.name + '…' : ''}</span>
+      <nav><a class="on" href="/">Playground</a><a href="/admin">Admin</a><a href="/docs">API docs</a></nav>
       <span class="grow"></span>
-      <a href="/admin">Admin</a><a href="/docs">API docs</a>
+      <${Health}/>
     </header>
+    <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
     <div class="body">
       <div class="view">
-        <div class="tools">
-          ${legend.map(([k, l, c]) => html`<label><input type="checkbox" disabled=${!item} checked=${show[k]} onChange=${() => toggle(k)}/>
-            ${c && html`<span class="swatch" style=${'background:' + c}></span>`}${l}</label>`)}
-        </div>
+        ${!noBoxes && html`<div class="tools">
+          <label class="param" title="Show or hide all boxes (O)"><input type="checkbox" checked=${show.all} onChange=${() => toggle('all')}/>Boxes</label>
+          <span class=${'layers' + (show.all ? '' : ' off')}>
+            ${legend.map(([k, l, c]) => html`<button class=${'chip' + (show[k] ? ' on' : '')} aria-pressed=${show[k]} disabled=${!show.all} onClick=${() => toggle(k)}>
+              ${c && html`<span class="dot" style=${'background:' + c}></span>`}${l}${k in count && html` <b>${count[k]}</b>`}</button>`)}
+          </span>
+        </div>`}
         <div class="stage">
-          ${item ? html`<${Page} item=${item} rows=${rows} show=${show} hot=${hot} setHot=${setHot}/>`
-                 : html`<div class="drop" onClick=${() => input.current.click()}>
-                     <strong>Drop an image, paste it, or click to open</strong>Lines and their boxes show up side by side</div>`}
+          ${item ? html`<${Page} item=${item} rows=${rows} show=${show.all ? show : {}} hot=${hot} setHot=${setHot}/>`
+                 : html`<div class="drop" onClick=${pick}>
+                     <strong>Drop an image, paste it, or click to open</strong>Then press Send to see the request and its response</div>`}
         </div>
       </div>
       <div class="side-wrap" style=${{ width: width + 'px' }}>
         <div class=${'grip' + (resizing ? ' on' : '')} onPointerDown=${resize} title="Drag to resize"></div>
-        <${Side} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>
+        <div class="side">
+          <${Request} item=${item} params=${params} setParams=${setParams} busy=${busy} elapsed=${elapsed} run=${run} pick=${pick}/>
+          <${Response} item=${item} params=${params} rows=${rows} hot=${hot} setHot=${setHot} busy=${busy}/>
+        </div>
       </div>
     </div>
   </div>`;
