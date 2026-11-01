@@ -4,7 +4,6 @@ import { Chart } from './Chart.js';
 import { css } from './util.js';
 
 const RANGES = [['1h', 'Last hour'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days']];
-const TASK_LABEL = { ocr: 'Plain text', markup: 'Markdown' };
 const EDGES = [5, 10, 20, 30, 60, 120];  // time histogram bucket edges, seconds
 
 function chartOpts() {
@@ -41,8 +40,6 @@ export function Trends({ d, range, setRange }) {
     <div class="card"><${Head} k="How long pages take" hint="Number of pages that finished within each time"/><${Times} secs=${d.scatter.map(p => p[1])}/></div>
     <div class="card">
       <${Head} k="Who sends pages" hint="By client token name"/><${Bars} list=${d.clients}/>
-      <div style="margin-top:16px"><${Head} k="What they ask for" hint="Plain text or Markdown output"/></div>
-      <${Bars} list=${d.tasks.map(([t, n]) => [TASK_LABEL[t] || t, n])} color="--s2"/>
     </div>
   </div>`;
 }

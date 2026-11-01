@@ -78,11 +78,11 @@ def set_running(job):
     running = job
 
 
-def start(client, ip, task, image, size):
+def start(client, ip, image, size):
     """Record a job row and its thumbnail; returns the job id."""
     with _db_lock:
-        cur = _db.execute('INSERT INTO jobs (created, client, ip, task, width, height, bytes) VALUES (?,?,?,?,?,?,?)',
-                          (time.time(), client, ip, task, image.width, image.height, size))
+        cur = _db.execute('INSERT INTO jobs (created, client, ip, width, height, bytes) VALUES (?,?,?,?,?,?)',
+                          (time.time(), client, ip, image.width, image.height, size))
         _db.commit()
         job_id = cur.lastrowid
     thumb = image.copy()
@@ -122,11 +122,11 @@ STATUSES = {'': '1', 'ok': 'error IS NULL AND seconds IS NOT NULL AND NOT incomp
             'error': 'error IS NOT NULL', 'running': 'seconds IS NULL AND error IS NULL'}
 
 
-def recent(sort='recent', status='', client='', task='', job_id=None, offset=0, limit=50):
+def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50):
     """One page of jobs matching the filters, and the total match count. sort and status must be keys of SORTS, STATUSES."""
     where = [STATUSES[status]]
     args = []
-    for col, val in (('client', client), ('task', task), ('id', job_id)):
+    for col, val in (('client', client), ('id', job_id)):
         if val not in ('', None):
             where.append(f'{col} = ?')
             args.append(val)
@@ -153,21 +153,20 @@ RANGES = {'1h': (3600, 60), '24h': (86400, 3600), '7d': (7 * 86400, 6 * 3600)}  
 
 
 def series(span_name):
-    """Per-bucket counts and latency over the range, plus scatter points and client/task splits."""
+    """Per-bucket counts and latency over the range, plus scatter points and client split."""
     span, step = RANGES[span_name]
     now = time.time()
     first = (now - span) // step * step + step
     with _db_lock:
-        rows = _db.execute('SELECT created, client, task, width, height, seconds, incomplete, error FROM jobs WHERE created >= ?', (first,)).fetchall()
+        rows = _db.execute('SELECT created, client, width, height, seconds, incomplete, error FROM jobs WHERE created >= ?', (first,)).fetchall()
         rejects = _db.execute("SELECT created FROM rejects WHERE reason = 'busy' AND created >= ?", (first,)).fetchall()
     n = int((now - first) // step) + 1
     b = {k: [0] * n for k in ('ok', 'incomplete', 'error', 'rejected')}
     secs = [[] for _ in range(n)]
-    clients, tasks, scatter = collections.Counter(), collections.Counter(), []
+    clients, scatter = collections.Counter(), []
     for r in rows:
         i = int((r['created'] - first) // step)
         clients[r['client']] += 1
-        tasks[r['task']] += 1
         if r['error']:
             b['error'][i] += 1
         elif r['seconds'] is not None:
@@ -178,7 +177,7 @@ def series(span_name):
         b['rejected'][int((created - first) // step)] += 1
     return {'t': [first + i * step for i in range(n)], **b,
             'avg': [round(sum(s) / len(s), 2) if s else None for s in secs], 'p95': [_p95(s) for s in secs],
-            'scatter': sorted(scatter), 'clients': clients.most_common(), 'tasks': tasks.most_common()}
+            'scatter': sorted(scatter), 'clients': clients.most_common()}
 
 
 def clear():

@@ -9,13 +9,13 @@ export function Detail({ job: j, onClose }) {
     setText(null);
     dialog.current.showModal();
     let live = true;  // ignore a late answer for a job that is no longer open
-    get(`/admin/text/${j.id}`).then(r => live && setText(r.text ?? 'No text (failed, still running, or recorded before text was kept)'));
+    get(`/api/admin/text/${j.id}`).then(r => live && setText(r.text ?? 'No text (failed, still running, or recorded before text was kept)'));
     return () => { live = false; };
   }, [j?.id]);
 
   const st = j && statusOf(j);
   const rows = j && [['Status', html`<span class="st ${st}">${STATUS_LABEL[st]}</span>`], ['Time', when(j.created)], ['Client', j.client], ['IP', j.ip ?? '-'],
-    ['Task', j.task], ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
+    ['Image', `${j.width}×${j.height}, ${kb(j.bytes)}`], ['Seconds', j.seconds ?? '-'], ['Characters', j.chars ?? '-']];
   return html`<dialog class="job" ref=${dialog} aria-labelledby="d-title" onClose=${onClose} onClick=${e => e.target === dialog.current && dialog.current.close()}>
     <div class="d-head">
       <h2 id="d-title">${j && `Job #${j.id}`}</h2>${j && html`<span class="st ${st}">${STATUS_LABEL[st]}</span>`}
@@ -24,7 +24,7 @@ export function Detail({ job: j, onClose }) {
       <button class="ghost" aria-label="Close" onClick=${() => dialog.current.close()}>✕</button>
     </div>
     ${j && html`<div class="d-body">
-      <a class="d-img" href="/admin/thumb/${j.id}" target="_blank"><img src="/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/></a>
+      <a class="d-img" href="/api/admin/thumb/${j.id}" target="_blank"><img src="/api/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/></a>
       <div class="d-info">
         <dl>${rows.slice(1).map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
         ${j.error ? html`<pre>${j.error}</pre>` : null}

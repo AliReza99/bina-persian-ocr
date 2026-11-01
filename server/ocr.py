@@ -10,7 +10,7 @@ from transformers import AutoModel, AutoProcessor, GenerationConfig
 from layout_regions import regions
 from decoding import generate_repaired
 
-PROMPTS = {'ocr': '</s><s><predict_text_in_pic>', 'markup': '</s><s><output_markdown><predict_text_in_pic>'}
+PROMPT = '</s><s><predict_text_in_pic>'
 MIN_SPLIT_HEIGHT = 48  # below this a region is about one line; stop splitting
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -53,7 +53,7 @@ def _ocr_region(image, prompt, flagged, deadline):
     return selected['ocr_prediction']
 
 
-def transcribe(image, task='ocr', on_start=None, max_seconds=None, masked=False):
+def transcribe(image, on_start=None, max_seconds=None, masked=False):
     """image: RGB PIL image. Returns {'text', 'incomplete'}. on_start runs once the model is ours.
     max_seconds caps inference (not the wait for the model); past it the text so far comes back as incomplete.
     masked: the old masked decoding, ~1.75x slower; text can differ on hard pages, better or worse."""
@@ -63,5 +63,5 @@ def transcribe(image, task='ocr', on_start=None, max_seconds=None, masked=False)
         if on_start:
             on_start()
         deadline = max_seconds and time.monotonic() + max_seconds
-        texts = [_ocr_region(image.crop(tuple(r['bbox'])), PROMPTS[task], flagged, deadline) for r in regions(image)['regions']]
+        texts = [_ocr_region(image.crop(tuple(r['bbox'])), PROMPT, flagged, deadline) for r in regions(image)['regions']]
     return {'text': '\n'.join(t for t in texts if t), 'incomplete': bool(flagged)}

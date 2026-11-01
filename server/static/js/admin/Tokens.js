@@ -3,7 +3,7 @@ import { get, post, usePoll } from './api.js';
 import { ago, when } from './util.js';
 
 export function Tokens() {
-  const [res, reload] = usePoll(() => get('/admin/tokens'));
+  const [res, reload] = usePoll(() => get('/api/admin/tokens'));
   const [armed, setArmed] = useState(null);  // two-step confirm: id of the token whose Revoke was clicked once
   const [name, setName] = useState('');
   const [made, setMade] = useState(null);  // plain token, shown once
@@ -13,13 +13,13 @@ export function Tokens() {
 
   const revoke = async t => {
     if (armed !== t.id) return setArmed(t.id);
-    await post(`/admin/tokens/${t.id}/revoke`);
+    await post(`/api/admin/tokens/${t.id}/revoke`);
     setArmed(null);
     reload();
   };
   const create = async e => {
     e.preventDefault();
-    const r = await post('/admin/tokens', { name });
+    const r = await post('/api/admin/tokens', { name });
     if (!r.ok) return alert(r.body.error);
     setName('');
     setMade(r.body.token);

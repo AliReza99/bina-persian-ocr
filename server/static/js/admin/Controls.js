@@ -3,9 +3,9 @@ import { post } from './api.js';
 
 export function Controls({ state, refresh }) {
   const [sec, setSec] = useState('');
-  const toggle = async () => { await post(state.paused ? '/admin/resume' : '/admin/pause'); refresh(); };
+  const toggle = async () => { await post(state.paused ? '/api/admin/resume' : '/api/admin/pause'); refresh(); };
   const setLimit = async max_seconds => {
-    const res = await post('/admin/limit', { max_seconds });
+    const res = await post('/api/admin/limit', { max_seconds });
     if (!res.ok) return alert(res.body.error);
     setSec('');
     refresh();

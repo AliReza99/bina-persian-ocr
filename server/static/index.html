@@ -30,12 +30,7 @@
   .status.err { color:var(--miss); }
 
   .body { flex:1; display:flex; min-height:0; }
-  aside { width:180px; flex:none; border-inline-end:1px solid var(--line); background:var(--panel); overflow:auto; padding:8px; }
-  aside h2, .side h2 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:4px 4px 8px; font-weight:600; }
-  .hist { display:block; width:100%; text-align:start; padding:6px; margin-bottom:6px; border-radius:8px; }
-  .hist.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-  .hist img { width:100%; height:70px; object-fit:cover; border-radius:4px; display:block; background:var(--soft); }
-  .hist small { display:block; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; margin-top:3px; }
+  .side h2 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:4px 4px 8px; font-weight:600; }
 
   .view { flex:1; min-width:0; display:flex; flex-direction:column; }
   .tools { display:flex; gap:14px; align-items:center; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; color:var(--muted); font-size:13px; }
@@ -92,8 +87,6 @@
 
   @media (max-width:1000px) {
     #app { height:auto; } .body { flex-direction:column; }
-    aside { width:auto; display:flex; gap:6px; overflow-x:auto; border:0; border-bottom:1px solid var(--line); }
-    aside h2 { display:none; } .hist { width:110px; flex:none; margin:0; }
     .side-wrap { width:auto !important; } .grip { display:none; }
     .side { width:auto; border:0; border-top:1px solid var(--line); } .pane { max-height:70vh; }
   }
@@ -165,8 +158,8 @@ function Side({ item, rows, hot, setHot }) {
   const r = item?.result;
   const placed = rows.filter(x => x.state !== 'miss').length;
   const copy = r && (tab === 'json' ? JSON.stringify(r, null, 2) : r.text);
-  // same layout before and during a read, with a note where the result will go
-  const empty = !item ? 'Open an image to see its text here' : item.error ? item.error : 'Reading…';
+  // same layout before, during and after a read, with a note where the result will go
+  const empty = !item ? 'Open an image to see its text here' : item.error ? item.error : item.running ? 'Reading…' : 'Press Run to read it';
   return html`<div class="side">
     <div class="stats">
       <div class="stat"><b>${r ? r.seconds + 's' : '–'}</b><span>OCR${r?.incomplete ? ' · incomplete' : ''}</span></div>
@@ -211,8 +204,8 @@ type OcrResponse = {
 // what a client would send and get; detector boxes are a test-page extra, so left out
 function Api({ item }) {
   const { detector, ...res } = item.result;
-  const query = [item.task !== 'ocr' && 'task=' + item.task, !item.boxes && 'boxes=0', item.masked && 'masked=1'].filter(Boolean).join('&');
-  const call = `const res = await fetch('${location.origin}/v1/ocr${query ? '?' + query : ''}', {
+  const query = [!item.boxes && 'boxes=0', item.masked && 'masked=1'].filter(Boolean).join('&');
+  const call = `const res = await fetch('${location.origin}/api/v1/ocr${query ? '?' + query : ''}', {
   method: 'POST',
   headers: { Authorization: 'Bearer <client token>' },
   body: file, // raw image bytes (${item.file.type}, ${(item.file.size / 1024).toFixed(0)} KB), no multipart
@@ -228,9 +221,8 @@ const data: OcrResponse = await res.json();`;
 let nextId = 0;
 
 function App() {
-  const [items, setItems] = useState([]);  // shortcut: history lives in this tab only, lost on reload
+  const [items, setItems] = useState([]);  // only the latest image is kept
   const [cur, setCur] = useState(null);
-  const [task, setTask] = useState('ocr');
   const [boxes, setBoxes] = useState(true);
   const [masked, setMasked] = useState(false);
   const [hot, setHot] = useState(null);
@@ -255,23 +247,22 @@ function App() {
   const patch = (id, p) => setItems(xs => xs.map(x => x.id === id ? { ...x, ...p } : x));
 
   async function run(it) {
-    patch(it.id, { result: null, error: null, task, boxes, masked });
+    patch(it.id, { result: null, error: null, running: true, boxes, masked });
     try {
-      const res = await fetch('/admin/ocr?task=' + task + (boxes ? '' : '&boxes=0') + (masked ? '&masked=1' : ''), { method: 'POST', body: it.file });
+      const res = await fetch('/api/admin/ocr?' + (boxes ? '' : 'boxes=0&') + (masked ? 'masked=1' : ''), { method: 'POST', body: it.file });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);
-      patch(it.id, { result: data });
+      patch(it.id, { result: data, running: false });
     } catch (e) {
-      patch(it.id, { error: 'Error: ' + e.message });
+      patch(it.id, { error: 'Error: ' + e.message, running: false });
     }
   }
 
   function add(file) {
     if (!file?.type.startsWith('image/')) return;
     const it = { id: nextId++, file, name: file.name || 'pasted image', url: URL.createObjectURL(file), time: new Date() };
-    setItems(xs => [it, ...xs]);
+    setItems(xs => { xs.forEach(x => URL.revokeObjectURL(x.url)); return [it]; });
     setCur(it.id); setHot(null);
-    run(it);
   }
 
   useEffect(() => {  // drop or paste anywhere on the page
@@ -285,7 +276,7 @@ function App() {
 
   const item = items.find(x => x.id === cur);
   const rows = item?.result ? rowsOf(item.result) : [];
-  const busy = item && !item.result && !item.error;
+  const busy = !!item?.running;
   const toggle = k => setShow(s => ({ ...s, [k]: !s[k] }));
   const legend = [['ok', 'Matched', 'var(--ok)'], ['guess', 'Guessed', 'var(--guess)'], ['det', 'Unused detector box', 'var(--det)'], ['num', 'Line numbers']];
 
@@ -294,24 +285,14 @@ function App() {
       <h1>Bina OCR</h1>
       <button class="primary" onClick=${() => input.current.click()}>Open image</button>
       <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
-      <select value=${task} onChange=${e => setTask(e.target.value)} aria-label="Output">
-        <option value="ocr">Plain text</option><option value="markup">Markdown</option></select>
       <label title="Also find where each line sits on the image (about 0.3 to 3 s more)"><input type="checkbox" checked=${boxes} onChange=${e => setBoxes(e.target.checked)}/> Boxes</label>
       <label title="Old masked decoding: about 1.75x slower; text can differ on hard pages"><input type="checkbox" checked=${masked} onChange=${e => setMasked(e.target.checked)}/> Masked</label>
-      <button disabled=${!item || busy} onClick=${() => run(item)}>Run again</button>
+      <button disabled=${!item || busy} onClick=${() => run(item)}>${item?.result || item?.error ? 'Run again' : 'Run'}</button>
       <span class="status">${busy ? 'Reading ' + item.name + '…' : ''}</span>
       <span class="grow"></span>
       <a href="/admin">Admin</a><a href="/docs">API docs</a>
     </header>
     <div class="body">
-      ${items.length > 0 && html`<aside>
-        <h2>History</h2>
-        ${items.map(x => html`<button class=${'hist' + (x.id === cur ? ' on' : '')} onClick=${() => { setCur(x.id); setHot(null); }}>
-          <img src=${x.url} alt=""/>
-          <small>${x.name}</small>
-          <small>${x.time.toLocaleTimeString()} · ${x.error ? 'failed' : x.result ? x.result.seconds + 's' : 'reading…'}</small>
-        </button>`)}
-      </aside>`}
       <div class="view">
         <div class="tools">
           ${legend.map(([k, l, c]) => html`<label><input type="checkbox" disabled=${!item} checked=${show[k]} onChange=${() => toggle(k)}/>

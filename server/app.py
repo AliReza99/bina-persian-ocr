@@ -3,7 +3,7 @@
 Run:   .venv/bin/python server/app.py [--host 127.0.0.1] [--port 8001]
 UI:    open http://127.0.0.1:8001/  (admin: /admin, both only from this machine; make client tokens there)
 Docs:  http://127.0.0.1:8001/docs (README.md)
-API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/v1/ocr
+API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/api/v1/ocr
 """
 import argparse, io, json, pathlib, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,7 +21,7 @@ MAX_BYTES = 30 * 2**20
 MAX_EDGE = 2500  # longer images are downscaled before inference
 Image.MAX_IMAGE_PIXELS = 50_000_000  # decompression-bomb guard: Pillow raises above 2x this
 PUBLIC = {'/health'}
-OCR_PATHS = {'/v1/ocr', '/whoami'}  # need a client token, even from this machine
+OCR_PATHS = {'/api/v1/ocr', '/api/v1/whoami'}  # need a client token, even from this machine
 DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
 # everything else is admin: this machine only, no login
 LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
@@ -87,22 +87,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'status': 'paused' if s['paused'] else 'ok', 'device': ocr.device,
                                     'version': VERSION, 'busy': s['running'] is not None,
                                     'waiting': s['waiting'], 'docs': '/docs'})
-        if path == '/whoami':  # lets a client check its token without sending a page
+        if path == '/api/v1/whoami':  # lets a client check its token without sending a page
             return self.reply(200, {'name': self.who})
         asset = (STATIC / path[1:]).resolve()
         if path.split('/')[1] in ASSET_DIRS and asset.is_relative_to(STATIC) and asset.suffix in ASSET_TYPES and asset.is_file():
             # vendor files never change; our own code must not go stale after an edit
             cache = 'max-age=86400' if path.startswith('/vendor/') else 'no-cache'
             return self.send(200, asset.read_bytes(), ASSET_TYPES[asset.suffix], [('Cache-Control', cache)])
-        if path == '/admin/state':
+        if path == '/api/admin/state':
             return self.reply(200, {**jobs.state(), 'stats': jobs.stats(), 'version': VERSION, 'device': ocr.device,
                                     'uptime': round(time.time() - monitor.started), 'samples': monitor.poll(gpu_mem if ocr.device == 'cuda' else None)})
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        if path == '/admin/series':
+        if path == '/api/admin/series':
             if q.get('range', '24h') not in jobs.RANGES:
                 return self.reply(400, {'error': f'range must be one of {list(jobs.RANGES)}'})
             return self.reply(200, jobs.series(q.get('range', '24h')))
-        if path == '/admin/jobs':
+        if path == '/api/admin/jobs':
             sort, status = q.get('sort', 'recent'), q.get('status', '')
             if sort not in jobs.SORTS or status not in jobs.STATUSES:
                 return self.reply(400, {'error': f'sort must be one of {list(jobs.SORTS)}, status one of {list(jobs.STATUSES)}'})
@@ -111,14 +111,14 @@ class Handler(BaseHTTPRequestHandler):
                 offset, limit = max(0, int(q.get('offset', 0))), min(200, max(1, int(q.get('limit', 50))))
             except ValueError:
                 return self.reply(400, {'error': 'id, offset and limit must be integers'})
-            rows, total = jobs.recent(sort, status, q.get('client', ''), q.get('task', ''), job_id, offset, limit)
+            rows, total = jobs.recent(sort, status, q.get('client', ''), job_id, offset, limit)
             return self.reply(200, {'jobs': rows, 'total': total})
-        if path == '/admin/tokens':
+        if path == '/api/admin/tokens':
             return self.reply(200, {'tokens': jobs.tokens()})
-        job_id = path.removeprefix('/admin/text/')
+        job_id = path.removeprefix('/api/admin/text/')
         if job_id != path and job_id.isdigit():
             return self.reply(200, {'text': jobs.text(int(job_id))})
-        job_id = path.removeprefix('/admin/thumb/')
+        job_id = path.removeprefix('/api/admin/thumb/')
         if job_id != path and job_id.isdigit() and (jobs.THUMBS / f'{job_id}.jpg').exists():
             return self.send(200, (jobs.THUMBS / f'{job_id}.jpg').read_bytes(), 'image/jpeg')
         self.reply(404, NOT_FOUND)
@@ -127,10 +127,10 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if not self.guard(url.path):
             return
-        if url.path in ('/admin/pause', '/admin/resume'):
-            jobs.set_paused(url.path == '/admin/pause')
+        if url.path in ('/api/admin/pause', '/api/admin/resume'):
+            jobs.set_paused(url.path == '/api/admin/pause')
             return self.reply(200, jobs.state())
-        if url.path == '/admin/limit':
+        if url.path == '/api/admin/limit':
             _, raw = self.body(4096)
             try:
                 value = json.loads(raw or b'{}').get('max_seconds')
@@ -141,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {'error': f'send {{"max_seconds": n}}, n whole seconds {lo} to {hi}, or null for no limit'})
             jobs.set_max_seconds(value)
             return self.reply(200, jobs.state())
-        if url.path == '/admin/tokens':
+        if url.path == '/api/admin/tokens':
             _, raw = self.body(4096)
             try:
                 name = str(json.loads(raw or b'{}').get('name', '')).strip()
@@ -153,25 +153,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(201, {'name': name, 'token': jobs.create_token(name)})
             except ValueError as e:
                 return self.reply(409, {'error': str(e)})
-        token_id = url.path.removeprefix('/admin/tokens/').removesuffix('/revoke')
+        token_id = url.path.removeprefix('/api/admin/tokens/').removesuffix('/revoke')
         if url.path.endswith('/revoke') and token_id.isdigit():
             jobs.revoke_token(int(token_id))
             return self.reply(200, {'revoked': True})
-        if url.path == '/admin/clear':
+        if url.path == '/api/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
-        if url.path == '/v1/ocr':
+        if url.path == '/api/v1/ocr':
             return self.ocr(url)
-        if url.path == '/admin/ocr':  # the test page on /, from this machine
+        if url.path == '/api/admin/ocr':  # the test page on /, from this machine
             self.who = 'test page'
             return self.ocr(url, debug=True)
         self.reply(404, NOT_FOUND)
 
     def ocr(self, url, debug=False):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        task, masked, boxes = q.get('task', 'ocr'), q.get('masked', '0'), q.get('boxes', '1')
-        if task not in ocr.PROMPTS:
-            return self.reply(400, {'error': f'task must be one of {list(ocr.PROMPTS)}'})
+        masked, boxes = q.get('masked', '0'), q.get('boxes', '1')
         for name, value in (('masked', masked), ('boxes', boxes)):
             if value not in ('0', '1'):
                 return self.reply(400, {'error': f'{name} must be 0 or 1'})
@@ -193,14 +191,14 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:
-            self.run_job(task, image, size, boxes == '1', debug, masked == '1')
+            self.run_job(image, size, boxes == '1', debug, masked == '1')
         finally:
             jobs.release()
 
-    def run_job(self, task, image, size, boxes=True, debug=False, masked=False):
+    def run_job(self, image, size, boxes=True, debug=False, masked=False):
         ip = self.client_address[0]
         client = self.who  # the token's name: a client can't relabel itself
-        job_id = jobs.start(client, ip, task, image, size)
+        job_id = jobs.start(client, ip, image, size)
         tick = [time.monotonic()]
 
         def on_start():
@@ -208,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
             jobs.set_running({'id': job_id, 'client': client, 'started': time.time()})
 
         try:
-            result = ocr.transcribe(image, task, on_start, jobs.max_seconds, masked)
+            result = ocr.transcribe(image, on_start, jobs.max_seconds, masked)
         except Exception as e:
             jobs.finish(job_id, round(time.monotonic() - tick[0], 2), error=repr(e))
             return self.reply(500, {'error': repr(e)})
