@@ -3,6 +3,7 @@ import copy, pathlib, sys, threading, time
 
 import numpy as np
 import torch
+from PIL import ImageOps
 
 MODEL_DIR = pathlib.Path(__file__).resolve().parent.parent / 'model'
 sys.path.insert(0, str(MODEL_DIR))
@@ -23,6 +24,10 @@ torch.set_grad_enabled(False)
 _lock = threading.Lock()  # one model instance: serialize inference
 
 
+class _Looped(Exception):
+    pass
+
+
 def _whitest_row(crop):
     """Row in the middle half with the least ink, so a split falls between text lines."""
     ink = (np.asarray(crop.convert('L')) < 128).sum(axis=1)
@@ -30,7 +35,7 @@ def _whitest_row(crop):
     return h // 4 + int(np.argmin(ink[h // 4: 3 * h // 4]))
 
 
-def _ocr_region(image, prompt, flagged, deadline):
+def _ocr_region(image, prompt, flagged, deadline, bail=False):
     left = deadline and deadline - time.monotonic()
     if left is not None and left <= 0:
         flagged.append(True)  # out of time: the rest of the image is skipped
@@ -43,6 +48,8 @@ def _ocr_region(image, prompt, flagged, deadline):
     if deadline and deadline - time.monotonic() < 1 and (looped or not selected['ended_with_eos']):
         flagged.append(True)
         return selected['ocr_prediction']
+    if looped and bail:
+        raise _Looped
     if looped and image.height >= 2 * MIN_SPLIT_HEIGHT:
         # model fell into a repetition loop: shorter pieces avoid it
         y = _whitest_row(image)
@@ -51,6 +58,10 @@ def _ocr_region(image, prompt, flagged, deadline):
     if looped:
         flagged.append(True)
     return selected['ocr_prediction']
+
+
+def _ocr_page(image, flagged, deadline, bail=False):
+    return [_ocr_region(image.crop(tuple(r['bbox'])), PROMPT, flagged, deadline, bail) for r in regions(image)['regions']]
 
 
 def transcribe(image, on_start=None, max_seconds=None, masked=False):
@@ -63,5 +74,11 @@ def transcribe(image, on_start=None, max_seconds=None, masked=False):
         if on_start:
             on_start()
         deadline = max_seconds and time.monotonic() + max_seconds
-        texts = [_ocr_region(image.crop(tuple(r['bbox'])), PROMPT, flagged, deadline) for r in regions(image)['regions']]
+        try:
+            texts = _ocr_page(image, flagged, deadline, bail=True)
+        except _Looped:
+            # faint show-through from the page's back can make Bina loop; faded to white it often reads.
+            # only after a loop: on pages that read fine the contrast change can make Bina invent lines
+            flagged.clear()
+            texts = _ocr_page(ImageOps.autocontrast(image.convert('L'), cutoff=2).convert('RGB'), flagged, deadline)
     return {'text': '\n'.join(t for t in texts if t), 'incomplete': bool(flagged)}
