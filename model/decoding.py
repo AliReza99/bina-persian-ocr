@@ -6,10 +6,11 @@ trim an output to conceal looping. A remaining loop is an explicit failure.
 import collections, copy, hashlib, json, time
 from PIL import Image
 import torch
+from transformers import StoppingCriteria,StoppingCriteriaList
 
 POLICY={
  'version':2,'primary':'if original height <32: bicubic scale min(4,64/h,1664/w), otherwise native pixels',
- 'retry_trigger':'generated token count reaches max_new_tokens (including EOS at cap); or original repetition trigger: at least64 generated tokens; any token4gram count>=12 and 4*count/token_count>=0.35; or any nonwhite character run>=32',
+ 'retry_trigger':'generated token count reaches max_new_tokens (including EOS at cap); or original repetition trigger: at least64 generated tokens; any token4gram count>=12 and 4*count/token_count>=0.35; or any nonwhite character run>=32; or the last 160 tokens repeat one unit of period<=40 (>=90% equal at that shift), checked every 16 tokens during generation, which stops it there',
  'retry_geometry':'one bicubic resize of ORIGINAL image by min(4,2048/h,1664/w), only if larger than current input',
  'selection':'take nonempty higher-resolution retry only when it has no detected repetition and ended with EOS before its cap; otherwise retain primary and flag unresolved',
  'gold_references_used':False,'benchmark_ids_used':False,'text_trimming':False,
@@ -31,9 +32,21 @@ def repetition_signal(token_ids,plain,eos_id):
  for c in plain:
   run=run+1 if c==last else 1;last=c
   if not c.isspace():longest=max(longest,run)
- return {'flagged':token_loop or longest>=32,'dominant_token4gram_count':dominant,
+ return {'flagged':token_loop or longest>=32 or tail_loop(ids),'dominant_token4gram_count':dominant,
   'dominant_token4gram_fraction':min(1.,4*dominant/max(1,len(ids))),
   'longest_nonwhite_character_run':longest}
+
+def tail_loop(ids,window=160):
+ """The last `window` tokens repeat one short unit (period <= window/4): the model is looping."""
+ tail=ids[-window:]
+ return len(tail)==window and any(sum(a==b for a,b in zip(tail,tail[p:]))>=.9*(window-p) for p in range(1,window//4+1))
+
+class LoopStop(StoppingCriteria):
+ """Ends generation once tail_loop fires, instead of running on to the token cap."""
+ def __init__(self,start):self.start=start
+ def __call__(self,input_ids,scores,**kwargs):
+  ids=input_ids[0,self.start:]
+  return torch.tensor([len(ids)%16==0 and tail_loop(ids.tolist())],device=input_ids.device)
 
 def generate_repaired(model,proc,original,prompt,generation_config):
  """Return selected attempt and raw evidence. Caller applies native scoring."""
@@ -44,7 +57,7 @@ def generate_repaired(model,proc,original,prompt,generation_config):
   inp=proc(images=[image],text=prompt,return_tensors='pt',add_special_tokens=False).to(model.device)
   cfg=copy.deepcopy(generation_config)
   if cfg.max_time:cfg.max_time=max(.01,cfg.max_time-(time.monotonic()-started))  # max_time spans all attempts, not each
-  with torch.inference_mode():out=model.generate(**inp,generation_config=cfg)
+  with torch.inference_mode():out=model.generate(**inp,generation_config=cfg,stopping_criteria=StoppingCriteriaList([LoopStop(inp['input_ids'].shape[1])]))
   ids=out[0,inp['input_ids'].shape[1]:].tolist()
   plain=proc.tokenizer.decode(ids,skip_special_tokens=True).strip()
   body=proc.tokenizer.decode(ids,skip_special_tokens=False)

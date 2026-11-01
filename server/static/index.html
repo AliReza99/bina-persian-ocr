@@ -171,8 +171,8 @@ function Side({ item, rows, hot, setHot }) {
     <div class="stats">
       <div class="stat"><b>${r ? r.seconds + 's' : '–'}</b><span>OCR${r?.incomplete ? ' · incomplete' : ''}</span></div>
       <div class="stat"><b>${r?.align_seconds != null ? r.align_seconds + 's' : '–'}</b><span>Boxes</span></div>
-      <div class="stat"><b style=${placed < rows.length ? 'color:var(--miss)' : ''}>${r ? `${placed}/${rows.length}` : '–'}</b><span>Lines placed</span></div>
-      <div class="stat"><b>${r ? rows.filter(x => x.state === 'guess').length : '–'}</b><span>Guessed</span></div>
+      <div class="stat"><b style=${r?.lines && placed < rows.length ? 'color:var(--miss)' : ''}>${r?.lines ? `${placed}/${rows.length}` : '–'}</b><span>Lines placed</span></div>
+      <div class="stat"><b>${r?.lines ? rows.filter(x => x.state === 'guess').length : '–'}</b><span>Guessed</span></div>
     </div>
     <div class="tabs">
       ${[['text', 'Text'], ['lines', 'Lines'], ['json', 'API']].map(([k, l]) => html`
@@ -188,17 +188,17 @@ function Side({ item, rows, hot, setHot }) {
 }
 
 const TYPES = {
-  '/v1/ocr': `type OcrResponse = {
+  false: `type OcrResponse = {
   text: string;        // lines separated by \\n
   incomplete: boolean; // part of the text may be missing
   seconds: number;     // inference time
 };`,
-  '/v2/ocr': `type Point = [x: number, y: number]; // 0..1 of image width / height
+  true: `type Point = [x: number, y: number]; // 0..1 of image width / height
 
-type OcrV2Response = {
-  text: string;
-  incomplete: boolean;
-  seconds: number;
+type OcrResponse = {
+  text: string;        // lines separated by \\n
+  incomplete: boolean; // part of the text may be missing
+  seconds: number;     // inference time
   lines: {
     line: number;   // index into text.split('\\n')
     box: [Point, Point, Point, Point]; // from top-left, clockwise
@@ -211,15 +211,16 @@ type OcrV2Response = {
 // what a client would send and get; detector boxes are a test-page extra, so left out
 function Api({ item }) {
   const { detector, ...res } = item.result;
-  const call = `const res = await fetch('${location.origin}${item.api}${item.task === 'ocr' ? '' : '?task=' + item.task}', {
+  const query = [item.task !== 'ocr' && 'task=' + item.task, !item.boxes && 'boxes=0', item.masked && 'masked=1'].filter(Boolean).join('&');
+  const call = `const res = await fetch('${location.origin}/v1/ocr${query ? '?' + query : ''}', {
   method: 'POST',
   headers: { Authorization: 'Bearer <client token>' },
   body: file, // raw image bytes (${item.file.type}, ${(item.file.size / 1024).toFixed(0)} KB), no multipart
 });
-const data: ${item.api === '/v1/ocr' ? 'OcrResponse' : 'OcrV2Response'} = await res.json();`;
+const data: OcrResponse = await res.json();`;
   return html`<div class="pane api">
     <h2>Request</h2><pre>${call}</pre>
-    <h2>Type</h2><pre>${TYPES[item.api]}</pre>
+    <h2>Type</h2><pre>${TYPES[item.boxes]}</pre>
     <h2>Response</h2><pre>${JSON.stringify(res, null, 2)}</pre>
   </div>`;
 }
@@ -230,7 +231,8 @@ function App() {
   const [items, setItems] = useState([]);  // shortcut: history lives in this tab only, lost on reload
   const [cur, setCur] = useState(null);
   const [task, setTask] = useState('ocr');
-  const [api, setApi] = useState('/v2/ocr');
+  const [boxes, setBoxes] = useState(true);
+  const [masked, setMasked] = useState(false);
   const [hot, setHot] = useState(null);
   const [over, setOver] = useState(false);
   const [show, setShow] = useState({ ok: true, guess: true, det: true, num: true });
@@ -253,9 +255,9 @@ function App() {
   const patch = (id, p) => setItems(xs => xs.map(x => x.id === id ? { ...x, ...p } : x));
 
   async function run(it) {
-    patch(it.id, { result: null, error: null, task, api });
+    patch(it.id, { result: null, error: null, task, boxes, masked });
     try {
-      const res = await fetch('/admin/ocr?task=' + task + '&api=' + api, { method: 'POST', body: it.file });
+      const res = await fetch('/admin/ocr?task=' + task + (boxes ? '' : '&boxes=0') + (masked ? '&masked=1' : ''), { method: 'POST', body: it.file });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);
       patch(it.id, { result: data });
@@ -294,8 +296,8 @@ function App() {
       <input ref=${input} type="file" accept="image/*" hidden onChange=${e => { add(e.target.files[0]); e.target.value = ''; }}/>
       <select value=${task} onChange=${e => setTask(e.target.value)} aria-label="Output">
         <option value="ocr">Plain text</option><option value="markup">Markdown</option></select>
-      <select value=${api} onChange=${e => setApi(e.target.value)} aria-label="API">
-        <option value="/v2/ocr">/v2/ocr</option><option value="/v1/ocr">/v1/ocr</option></select>
+      <label title="Also find where each line sits on the image (about 0.3 to 3 s more)"><input type="checkbox" checked=${boxes} onChange=${e => setBoxes(e.target.checked)}/> Boxes</label>
+      <label title="Old masked decoding: about 1.75x slower; text can differ on hard pages"><input type="checkbox" checked=${masked} onChange=${e => setMasked(e.target.checked)}/> Masked</label>
       <button disabled=${!item || busy} onClick=${() => run(item)}>Run again</button>
       <span class="status">${busy ? 'Reading ' + item.name + '…' : ''}</span>
       <span class="grow"></span>

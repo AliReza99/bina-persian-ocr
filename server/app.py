@@ -21,7 +21,7 @@ MAX_BYTES = 30 * 2**20
 MAX_EDGE = 2500  # longer images are downscaled before inference
 Image.MAX_IMAGE_PIXELS = 50_000_000  # decompression-bomb guard: Pillow raises above 2x this
 PUBLIC = {'/health'}
-OCR_PATHS = {'/v1/ocr', '/v2/ocr', '/whoami'}  # need a client token, even from this machine
+OCR_PATHS = {'/v1/ocr', '/whoami'}  # need a client token, even from this machine
 DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
 # everything else is admin: this machine only, no login
 LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
@@ -160,18 +160,21 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
-        if url.path in ('/v1/ocr', '/v2/ocr'):
-            return self.ocr(url, v2=url.path == '/v2/ocr')
+        if url.path == '/v1/ocr':
+            return self.ocr(url)
         if url.path == '/admin/ocr':  # the test page on /, from this machine
             self.who = 'test page'
-            v2 = parse_qs(url.query).get('api', ['/v2/ocr'])[0] != '/v1/ocr'
-            return self.ocr(url, v2=v2, debug=True)
+            return self.ocr(url, debug=True)
         self.reply(404, NOT_FOUND)
 
-    def ocr(self, url, v2=False, debug=False):
-        task = parse_qs(url.query).get('task', ['ocr'])[0]
+    def ocr(self, url, debug=False):
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        task, masked, boxes = q.get('task', 'ocr'), q.get('masked', '0'), q.get('boxes', '1')
         if task not in ocr.PROMPTS:
             return self.reply(400, {'error': f'task must be one of {list(ocr.PROMPTS)}'})
+        for name, value in (('masked', masked), ('boxes', boxes)):
+            if value not in ('0', '1'):
+                return self.reply(400, {'error': f'{name} must be 0 or 1'})
         size, raw = self.body(MAX_BYTES)
         if raw is None:
             return self.reply(413 if size else 400, {'error': f'send image bytes as body, max {MAX_BYTES} bytes'})
@@ -190,11 +193,11 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:
-            self.run_job(task, image, size, v2, debug)
+            self.run_job(task, image, size, boxes == '1', debug, masked == '1')
         finally:
             jobs.release()
 
-    def run_job(self, task, image, size, v2=False, debug=False):
+    def run_job(self, task, image, size, boxes=True, debug=False, masked=False):
         ip = self.client_address[0]
         client = self.who  # the token's name: a client can't relabel itself
         job_id = jobs.start(client, ip, task, image, size)
@@ -205,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
             jobs.set_running({'id': job_id, 'client': client, 'started': time.time()})
 
         try:
-            result = ocr.transcribe(image, task, on_start, jobs.max_seconds)
+            result = ocr.transcribe(image, task, on_start, jobs.max_seconds, masked)
         except Exception as e:
             jobs.finish(job_id, round(time.monotonic() - tick[0], 2), error=repr(e))
             return self.reply(500, {'error': repr(e)})
@@ -214,7 +217,7 @@ class Handler(BaseHTTPRequestHandler):
         seconds = round(time.monotonic() - tick[0], 2)
         jobs.finish(job_id, seconds, result)
         extra = {}
-        if v2:
+        if boxes:
             # after the model lock is released, so the next page reads on the GPU meanwhile
             started = time.monotonic()
             try:

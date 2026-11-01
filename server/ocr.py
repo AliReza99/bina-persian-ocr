@@ -18,7 +18,7 @@ dtype = torch.bfloat16 if device == 'cuda' else torch.float32
 model = AutoModel.from_pretrained(MODEL_DIR, trust_remote_code=True, local_files_only=True, dtype=dtype).eval().to(device)
 processor = AutoProcessor.from_pretrained(MODEL_DIR, trust_remote_code=True, local_files_only=True)
 config = GenerationConfig.from_pretrained(MODEL_DIR, local_files_only=True)
-config.max_new_tokens = 2048
+config.max_new_tokens = 4096  # a dense Persian page needs ~2.5-4k; loops are cut early by decoding.LoopStop
 torch.set_grad_enabled(False)
 _lock = threading.Lock()  # one model instance: serialize inference
 
@@ -53,11 +53,13 @@ def _ocr_region(image, prompt, flagged, deadline):
     return selected['ocr_prediction']
 
 
-def transcribe(image, task='ocr', on_start=None, max_seconds=None):
+def transcribe(image, task='ocr', on_start=None, max_seconds=None, masked=False):
     """image: RGB PIL image. Returns {'text', 'incomplete'}. on_start runs once the model is ours.
-    max_seconds caps inference (not the wait for the model); past it the text so far comes back as incomplete."""
+    max_seconds caps inference (not the wait for the model); past it the text so far comes back as incomplete.
+    masked: the old masked decoding, ~1.75x slower; text can differ on hard pages, better or worse."""
     flagged = []
     with _lock:
+        model.decoder.unmasked_decode = not masked
         if on_start:
             on_start()
         deadline = max_seconds and time.monotonic() + max_seconds

@@ -157,11 +157,13 @@ class _GQAAttention(nn.Module):
         v = self.v_proj(hidden).view(batch, length, self.num_kv_heads, self.head_dim).transpose(1, 2)
         if cache is not None:
             k, v = cache.update(k, v, self.index)
-        past = k.shape[-2] - length
-        allowed = torch.arange(k.shape[-2], device=hidden.device)[None, :] <= (
-            torch.arange(length, device=hidden.device)[:, None] + past
-        )
-        allowed = allowed[None, None] & key_mask[:, None, None, :]
+        allowed = None
+        if key_mask is not None:
+            past = k.shape[-2] - length
+            allowed = torch.arange(k.shape[-2], device=hidden.device)[None, :] <= (
+                torch.arange(length, device=hidden.device)[:, None] + past
+            )
+            allowed = allowed[None, None] & key_mask[:, None, None, :]
         repeat = self.num_heads // self.num_kv_heads
         output = F.scaled_dot_product_attention(
             q, k.repeat_interleave(repeat, dim=1), v.repeat_interleave(repeat, dim=1),
@@ -193,8 +195,13 @@ class NemotronParseDecoder(nn.Module):
         self.layer_norm = nn.LayerNorm(config.d_model)
         self.extra_heads = nn.ModuleList([nn.Linear(config.d_model, config.d_model) for _ in range(num_extra_heads)])
         self.extra_proj = nn.ModuleList([nn.Linear(config.d_model, config.d_model) for _ in range(num_extra_heads)])
+        # one new token may see every cached key, so no mask is needed and SDPA takes its flash kernel:
+        # ~1.75x faster decoding, but bf16 rounding differs, so greedy output can change on hard pages
+        self.unmasked_decode = False
 
     def forward(self, embeddings, cache, mask):
+        if self.unmasked_decode and embeddings.shape[1] == 1 and bool(mask.all()):
+            mask = None
         hidden = self.layernorm_embedding(embeddings)
         for layer in self.layers:
             hidden = layer(hidden, cache, mask)

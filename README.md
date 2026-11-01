@@ -40,10 +40,10 @@ git clone https://github.com/AliReza99/bina-persian-ocr && cd bina-persian-ocr
 uv venv -p 3.11 .venv
 uv pip install -p .venv huggingface_hub -r model/requirements.txt
 .venv/bin/hf download Reza2kn/Bina-0.4-Koochik model.safetensors --local-dir model
-sudo apt install tesseract-ocr tesseract-ocr-fas   # for /v2/ocr line boxes
+sudo apt install tesseract-ocr tesseract-ocr-fas   # for line boxes
 ```
 
-The line detector models for `/v2/ocr` (PP-OCRv5, a few MB) download on the first start.
+The line detector models for line boxes (PP-OCRv5, a few MB) download on the first start.
 
 ## Run
 
@@ -72,9 +72,9 @@ Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails
 
 ### `POST /v1/ocr`
 
-Extract the text (Persian/English) from one image. One image runs at a time; up to 3 more wait, beyond that the server answers `503 busy`.
+Extract the text (Persian/English) from one image, and where each text line sits on it. One image runs at a time; up to 3 more wait, beyond that the server answers `503 busy`.
 
-**Auth**: `/v1/ocr` and `/v2/ocr` need `Authorization: Bearer <token>`, always, even from the Bina machine. The token is a client token, made under *Client tokens* in `/admin`; its name labels every job it sends and can't be changed by the client. Each job also records the caller's IP. `/health` is open. `/docs` takes a client token or the Bina machine. Everything else (the UI, `/admin`) is only reachable from the Bina machine.
+**Auth**: `/v1/ocr` needs `Authorization: Bearer <token>`, always, even from the Bina machine. The token is a client token, made under *Client tokens* in `/admin`; its name labels every job it sends and can't be changed by the client. Each job also records the caller's IP. `/health` is open. `/docs` takes a client token or the Bina machine. Everything else (the UI, `/admin`) is only reachable from the Bina machine.
 
 Images with a long edge over 2500 px are downscaled first; over 100 MP are rejected.
 
@@ -83,60 +83,12 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | Param | Values | Default | Meaning |
 |---|---|---|---|
 | `task` | `ocr`, `markup` | `ocr` | `ocr` = plain text, `markup` = Markdown/math |
+| `boxes` | `0`, `1` | `1` | `1` = also return `lines` and `align_seconds` (where each line sits on the image), about 0.3 to 3 s more per page on the CPU; `0` = text only |
+| `masked` | `0`, `1` | `0` | `1` = old masked decoding, about 1.75x slower. Default output can differ from it on hard pages (photos with a facing page, very dense text), sometimes better, sometimes with junk lines at the end |
 
 **Body**: raw image bytes (PNG, JPG, WebP, anything Pillow reads), max 30 MB. No multipart, no JSON. `Content-Type` is ignored.
 
 **Response 200** `application/json`
-
-```json
-{
-  "text": "این یک متن آزمایشی است.\n123 + 456 = 579",
-  "incomplete": false,
-  "seconds": 0.36
-}
-```
-
-| Field | Type | Meaning |
-|---|---|---|
-| `text` | string | transcript, lines separated by `\n` |
-| `incomplete` | bool | `true` if some region still hit a repetition loop after splitting, or the admin time limit ran out; part of the text may be missing |
-| `seconds` | number | inference time |
-
-**Errors** (all `{"error": "<message>"}`)
-
-| Status | When |
-|---|---|
-| 400 | empty body, unreadable image, or bad `task` |
-| 404 | unknown path |
-| 401 | missing or wrong token |
-| 403 | admin route from another machine |
-| 413 | body over 30 MB, or image over 100 MP |
-| 500 | inference failed |
-| 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin; see `Retry-After` |
-
-**Examples**
-
-```sh
-curl --data-binary @page.jpg http://127.0.0.1:8001/v1/ocr
-curl --data-binary @page.jpg 'http://127.0.0.1:8001/v1/ocr?task=markup'
-```
-
-```python
-import requests
-r = requests.post('http://127.0.0.1:8001/v1/ocr', data=open('page.jpg', 'rb'))
-print(r.json()['text'])
-```
-
-```js
-const r = await fetch('http://127.0.0.1:8001/v1/ocr', { method: 'POST', body: file }); // file: Blob/File/Buffer
-const { text } = await r.json();
-```
-
-### `POST /v2/ocr`
-
-Same as `/v1/ocr` (request, auth, queue, errors), plus where each text line sits on the image. Use it to draw or select lines on the photo. `/v1/ocr` stays as it is.
-
-**Response 200**
 
 ```json
 {
@@ -152,13 +104,48 @@ Same as `/v1/ocr` (request, auth, queue, errors), plus where each text line sits
 
 | Field | Type | Meaning |
 |---|---|---|
-| `lines` | array | one item per located line, in text order; lines with no box are left out |
+| `text` | string | transcript, lines separated by `\n` |
+| `incomplete` | bool | `true` if some region still hit a repetition loop after splitting, or the admin time limit ran out; part of the text may be missing |
+| `seconds` | number | inference time |
+| `lines` | array | only with `boxes=1`: one item per located line, in text order; lines with no box are left out |
 | `lines[].line` | int | index into `text.split('\n')` (blank lines count) |
 | `lines[].box` | 4 × `[x, y]` | corners as fractions (0..1) of the image width and height, starting top-left, clockwise; a quad, so tilted lines fit |
 | `lines[].guess` | bool | `true` when the box was inferred from the lines around it rather than matched directly |
-| `align_seconds` | number | time to locate the lines (CPU), after `seconds` of inference |
+| `align_seconds` | number | only with `boxes=1`: time to locate the lines (CPU), after `seconds` of inference |
 
 Locating lines never fails the request: if it breaks, `lines` is `[]`. The text is always the model's; the boxes only say where it is. On a typical page about 85% of lines get a box; most of the rest are fragments with nothing to point at.
+
+**Errors** (all `{"error": "<message>"}`)
+
+| Status | When |
+|---|---|
+| 400 | empty body, unreadable image, or bad `task`, `masked` or `boxes` |
+| 404 | unknown path |
+| 401 | missing or wrong token |
+| 403 | admin route from another machine |
+| 413 | body over 30 MB, or image over 100 MP |
+| 500 | inference failed |
+| 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin; see `Retry-After` |
+
+**Examples**
+
+```sh
+curl --data-binary @page.jpg http://127.0.0.1:8001/v1/ocr
+curl --data-binary @page.jpg 'http://127.0.0.1:8001/v1/ocr?task=markup'
+curl --data-binary @page.jpg 'http://127.0.0.1:8001/v1/ocr?boxes=0'   # text only, faster
+curl --data-binary @page.jpg 'http://127.0.0.1:8001/v1/ocr?masked=1'
+```
+
+```python
+import requests
+r = requests.post('http://127.0.0.1:8001/v1/ocr', data=open('page.jpg', 'rb'))
+print(r.json()['text'])
+```
+
+```js
+const r = await fetch('http://127.0.0.1:8001/v1/ocr', { method: 'POST', body: file }); // file: Blob/File/Buffer
+const { text } = await r.json();
+```
 
 ### `GET /health`
 
@@ -179,13 +166,13 @@ From the Bina machine only, no token. Used by the `/admin` page.
 | `GET /admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `task`, `id`, `offset`, `limit` (default 50, max 200) |
 | `GET /admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
 | `GET /admin/thumb/<id>` | JPEG thumbnail |
-| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/v1/ocr` and `/v2/ocr` |
+| `POST /admin/pause`, `POST /admin/resume` | stop / start accepting `/v1/ocr` |
 | `POST /admin/limit` | `{"max_seconds": n}` (whole seconds, 5 to 3600) or `{"max_seconds": null}` for no limit |
 | `POST /admin/clear` | deletes all job history |
 | `GET /admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
 | `POST /admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |
 | `POST /admin/tokens/<id>/revoke` | deletes the token |
-| `POST /admin/ocr` | same as `POST /v2/ocr` plus `detector` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
+| `POST /admin/ocr` | same as `POST /v1/ocr` (same query) plus `detector` with `boxes=1` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
 

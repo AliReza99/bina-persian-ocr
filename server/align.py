@@ -1,4 +1,4 @@
-"""Where each line of the OCR text sits on the page, for /v2/ocr.
+"""Where each line of the OCR text sits on the page, for /v1/ocr line boxes (boxes=1).
 
 A line detector (PP-OCRv5) finds text rows; a cheap reader (Tesseract for Persian, RapidOCR for
 English) reads each row roughly, only to tell which OCR line it is. The text itself stays Bina's.

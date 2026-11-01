@@ -1,0 +1,345 @@
+// Bina OCR speed benchmark (2026-10-31 .. 2026-11-01).
+//
+// Why some pages were slow:
+//  1. Repetition loops ("که که که ..."): the loop check only fired at the 2048-token cap (~8 s of junk),
+//     then a hi-res retry looped at the same spot (~10 s), then the page was split and reread.
+//  2. Dense Persian pages need 2.5k-4k tokens: they hit the 2048 cap with no loop, got the same useless retry, then split.
+//  3. Decoding ~3.8 ms/token; half the GPU time went to the masked attention kernel (the mask never hides anything).
+//
+// Shipped:
+//  - early loop stop: decoding.tail_loop / LoopStop, cuts a loop ~160 tokens after it starts. Text identical.
+//  - token cap 2048 -> 4096 (server/ocr.py). Dense pages read in one pass. Persian CER unchanged (0%).
+//  - unmasked decode steps, now the server default (?masked=1 = old decoding). ~1.75x per token.
+//    Text changes on 5 of 21 pages (bf16 rounding, greedy decoding diverges): 0e better, 00 and en-serif-26-clean
+//    get junk lines at the end, 11 and fa-naskh-22-clean differ by a word or two.
+// Rejected: pre-splitting tall regions (hallucinated lines), SDPA enable_gqa (no speedup), skipping the hi-res retry (lost a line on 0e).
+//
+// Fields:
+//  seconds            in-process ocr.transcribe time (no HTTP, no line boxes), model warm, one run each
+//  model_calls        model.generate calls (retries and split halves count)
+//  tokens             tokens generated across all calls
+//  similarity_to_base difflib ratio of the text vs the "base" variant (real images have no ground truth)
+//  cer_pct            character error rate vs the known text (synthetic pages, rendered with PIL; spaces/ZWNJ normalized)
+//  http_baseline      first run through the live server's /v2/ocr before any change; it had a 30 s admin time limit,
+//                     so 0e came back incomplete there
+// Known: English synthetic pages have 11-44% CER in every variant (model emits fragments like `fad{i|},`): a quality issue, not speed.
+// Images: real ones in ocr-test/; synthetic ones were generated for this run and are not in the repo.
+{
+  "date": "2026-11-01",
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "torch": "2.7.1+cu126",
+  "transformers": "5.14.1",
+  "shipped": {
+    "default": "nomask,stop,cap4096",
+    "masked=1": "stop,cap4096",
+    "files": [
+      "model/decoding.py",
+      "model/hf_nemotron_parse_modeling.py",
+      "server/ocr.py",
+      "server/app.py"
+    ]
+  },
+  "http_baseline": {
+    "05-golestan-photo.jpg": {"wall_seconds": 1.06, "ocr_seconds": 0.67, "align_seconds": 0.35, "chars": 247, "incomplete": false},
+    "06-mixed-latin.png": {"wall_seconds": 1.03, "ocr_seconds": 0.69, "align_seconds": 0.29, "chars": 271, "incomplete": false},
+    "09-book.png": {"wall_seconds": 4.49, "ocr_seconds": 3.6, "align_seconds": 0.83, "chars": 1598, "incomplete": false},
+    "6a3c40e553b985a2bfdece00.jpg": {"wall_seconds": 22.29, "ocr_seconds": 19.52, "align_seconds": 2.71, "chars": 2404, "incomplete": false},
+    "6a3c40e553b985a2bfdece02.jpg": {"wall_seconds": 4.11, "ocr_seconds": 1.57, "align_seconds": 2.48, "chars": 1323, "incomplete": false},
+    "6a3c40e553b985a2bfdece05.jpg": {"wall_seconds": 1.32, "ocr_seconds": 0.5, "align_seconds": 0.77, "chars": 365, "incomplete": false},
+    "6a3c41df53b985a2bfdece0a.jpg": {"wall_seconds": 4.03, "ocr_seconds": 3.2, "align_seconds": 0.78, "chars": 1305, "incomplete": false},
+    "6a3c41e353b985a2bfdece0e.jpg": {"wall_seconds": 31.9, "ocr_seconds": 30.0, "align_seconds": 1.85, "chars": 2944, "incomplete": true},
+    "6a3c41e753b985a2bfdece11.jpg": {"wall_seconds": 9.69, "ocr_seconds": 7.58, "align_seconds": 2.05, "chars": 2498, "incomplete": false}
+  },
+  "real_images": {
+    "base": {
+      "about": "code before this work: loop found only at the 2048-token cap",
+      "total_seconds": 87.78,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.59, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.55, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.37, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 19.3, "model_calls": 4, "tokens": 4731, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.42, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.37, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.91, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 51.76, "model_calls": 11, "tokens": 15734, "chars": 1704, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 7.51, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "stop": {
+      "about": "early loop stop (decoding.LoopStop + tail_loop)",
+      "total_seconds": 60.23,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.64, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.61, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.99, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 10.7, "model_calls": 4, "tokens": 2379, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.67, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.44, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.2, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 31.28, "model_calls": 11, "tokens": 8342, "chars": 1704, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 7.7, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "stop,noretry": {
+      "about": "early stop + skip the hi-res retry when it would upscale < 2x",
+      "total_seconds": 38.82,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.63, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.58, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.57, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 5.17, "model_calls": 3, "tokens": 1547, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.47, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.38, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.07, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 16.23, "model_calls": 11, "tokens": 5568, "chars": 1662, "incomplete": false, "similarity_to_base": 0.946},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 7.72, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "stop,split": {
+      "about": "early stop + pre-split regions taller than 800 px (rejected: hallucinated lines)",
+      "total_seconds": 34.89,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.61, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.6, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.29, "model_calls": 2, "tokens": 1321, "chars": 1600, "incomplete": false, "similarity_to_base": 0.992},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 2.88, "model_calls": 6, "tokens": 1046, "chars": 2508, "incomplete": false, "similarity_to_base": 0.975},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.12, "model_calls": 3, "tokens": 337, "chars": 1263, "incomplete": false, "similarity_to_base": 0.974},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.38, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.05, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 18.19, "model_calls": 14, "tokens": 6429, "chars": 1729, "incomplete": false, "similarity_to_base": 0.992},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.77, "model_calls": 3, "tokens": 1839, "chars": 2310, "incomplete": false, "similarity_to_base": 0.799}
+      }
+    },
+    "stop,split,noretry": {
+      "about": "early stop + pre-split + skip retry (rejected)",
+      "total_seconds": 29.27,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.62, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.58, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.37, "model_calls": 2, "tokens": 1321, "chars": 1600, "incomplete": false, "similarity_to_base": 0.992},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 2.41, "model_calls": 5, "tokens": 870, "chars": 2508, "incomplete": false, "similarity_to_base": 0.975},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.1, "model_calls": 3, "tokens": 337, "chars": 1263, "incomplete": false, "similarity_to_base": 0.974},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.38, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.06, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 12.93, "model_calls": 15, "tokens": 4974, "chars": 1667, "incomplete": false, "similarity_to_base": 0.866},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.82, "model_calls": 3, "tokens": 1839, "chars": 2310, "incomplete": false, "similarity_to_base": 0.799}
+      }
+    },
+    "gqa": {
+      "about": "SDPA enable_gqa instead of repeat_interleave (rejected: no speedup)",
+      "total_seconds": 67.55,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.71, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.67, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.87, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 17.89, "model_calls": 4, "tokens": 4731, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.43, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.43, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.23, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 32.45, "model_calls": 7, "tokens": 9559, "chars": 1669, "incomplete": false, "similarity_to_base": 0.941},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 6.87, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "gqa,stop": {
+      "about": "gqa + early stop (rejected)",
+      "total_seconds": 51.55,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.76, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.72, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 4.1, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 9.22, "model_calls": 4, "tokens": 2411, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.47, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.45, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 3.44, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 24.43, "model_calls": 7, "tokens": 6775, "chars": 1669, "incomplete": false, "similarity_to_base": 0.941},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 6.96, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "nomask": {
+      "about": "no attention mask on 1-token decode steps",
+      "total_seconds": 20.67,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.5, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.45, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 2.48, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 1.77, "model_calls": 1, "tokens": 751, "chars": 2689, "incomplete": false, "similarity_to_base": 0.775},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.03, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.32, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.05, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 7.9, "model_calls": 2, "tokens": 3474, "chars": 1738, "incomplete": false, "similarity_to_base": 0.949},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.17, "model_calls": 1, "tokens": 1997, "chars": 2497, "incomplete": false, "similarity_to_base": 0.999}
+      }
+    },
+    "nomask,stop": {
+      "about": "no mask + early stop",
+      "total_seconds": 19.75,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.49, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.45, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 2.51, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 1.71, "model_calls": 1, "tokens": 751, "chars": 2689, "incomplete": false, "similarity_to_base": 0.775},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.0, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.32, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.12, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 6.91, "model_calls": 2, "tokens": 2946, "chars": 1738, "incomplete": false, "similarity_to_base": 0.949},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.24, "model_calls": 1, "tokens": 1997, "chars": 2497, "incomplete": false, "similarity_to_base": 0.999}
+      }
+    },
+    "nomask,stop,noretry": {
+      "about": "no mask + early stop + skip retry",
+      "total_seconds": 20.77,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.49, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.46, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 2.49, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 1.8, "model_calls": 1, "tokens": 751, "chars": 2689, "incomplete": false, "similarity_to_base": 0.775},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.04, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.33, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.11, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 7.78, "model_calls": 5, "tokens": 3817, "chars": 1671, "incomplete": false, "similarity_to_base": 0.94},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.27, "model_calls": 1, "tokens": 1997, "chars": 2497, "incomplete": false, "similarity_to_base": 0.999}
+      }
+    },
+    "stop,cap4096": {
+      "about": "early stop + 4096 token cap  == server with masked=1",
+      "total_seconds": 52.63,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.57, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.55, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 3.34, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 9.02, "model_calls": 4, "tokens": 2379, "chars": 2404, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 1.41, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.36, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.9, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 26.94, "model_calls": 11, "tokens": 8342, "chars": 1704, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 7.54, "model_calls": 1, "tokens": 1999, "chars": 2498, "incomplete": false, "similarity_to_base": 1.0}
+      }
+    },
+    "nomask,stop,cap4096": {
+      "about": "no mask + early stop + 4096 cap  == server default (shipped)",
+      "total_seconds": 19.32,
+      "pages": {
+        "05-golestan-photo.jpg": {"seconds": 0.48, "model_calls": 1, "tokens": 201, "chars": 247, "incomplete": false, "similarity_to_base": 1.0},
+        "06-mixed-latin.png": {"seconds": 0.44, "model_calls": 1, "tokens": 197, "chars": 271, "incomplete": false, "similarity_to_base": 1.0},
+        "09-book.png": {"seconds": 2.43, "model_calls": 1, "tokens": 1322, "chars": 1598, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece00.jpg": {"seconds": 1.69, "model_calls": 1, "tokens": 751, "chars": 2689, "incomplete": false, "similarity_to_base": 0.775},
+        "6a3c40e553b985a2bfdece02.jpg": {"seconds": 0.98, "model_calls": 1, "tokens": 350, "chars": 1323, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c40e553b985a2bfdece05.jpg": {"seconds": 0.32, "model_calls": 1, "tokens": 92, "chars": 365, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41df53b985a2bfdece0a.jpg": {"seconds": 2.03, "model_calls": 1, "tokens": 1079, "chars": 1305, "incomplete": false, "similarity_to_base": 1.0},
+        "6a3c41e353b985a2bfdece0e.jpg": {"seconds": 6.77, "model_calls": 2, "tokens": 2946, "chars": 1738, "incomplete": false, "similarity_to_base": 0.949},
+        "6a3c41e753b985a2bfdece11.jpg": {"seconds": 4.18, "model_calls": 1, "tokens": 1997, "chars": 2497, "incomplete": false, "similarity_to_base": 0.999}
+      }
+    }
+  },
+  "synthetic_pages": {
+    "base": {
+      "about": "code before this work: loop found only at the 2048-token cap",
+      "total_seconds": 339.26,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 6.45, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 6.43, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 3.42, "model_calls": 1, "tokens": 972, "chars": 3828, "incomplete": false, "cer_pct": 11.12},
+        "en-serif-26-noisy.jpg": {"seconds": 4.31, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 58.48, "model_calls": 10, "tokens": 16354, "chars": 5060, "incomplete": false, "cer_pct": 0.02},
+        "fa-naskh-22-noisy.jpg": {"seconds": 42.55, "model_calls": 7, "tokens": 12257, "chars": 5060, "incomplete": false, "cer_pct": 0.08},
+        "fa-naskh-28-clean.jpg": {"seconds": 25.22, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 24.96, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 59.33, "model_calls": 10, "tokens": 16746, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 56.56, "model_calls": 10, "tokens": 16744, "chars": 5579, "incomplete": false, "cer_pct": 0.07},
+        "fa-vazir-26-clean.jpg": {"seconds": 26.04, "model_calls": 4, "tokens": 6735, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 25.51, "model_calls": 4, "tokens": 6739, "chars": 3269, "incomplete": false, "cer_pct": 0.06}
+      }
+    },
+    "stop": {
+      "about": "early loop stop (decoding.LoopStop + tail_loop)",
+      "total_seconds": 342.72,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 6.56, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 6.57, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 3.5, "model_calls": 1, "tokens": 972, "chars": 3828, "incomplete": false, "cer_pct": 11.12},
+        "en-serif-26-noisy.jpg": {"seconds": 4.39, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 59.13, "model_calls": 10, "tokens": 16354, "chars": 5060, "incomplete": false, "cer_pct": 0.02},
+        "fa-naskh-22-noisy.jpg": {"seconds": 42.85, "model_calls": 7, "tokens": 12257, "chars": 5060, "incomplete": false, "cer_pct": 0.08},
+        "fa-naskh-28-clean.jpg": {"seconds": 25.32, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 25.15, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 59.97, "model_calls": 10, "tokens": 16746, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 57.3, "model_calls": 10, "tokens": 16744, "chars": 5579, "incomplete": false, "cer_pct": 0.07},
+        "fa-vazir-26-clean.jpg": {"seconds": 26.21, "model_calls": 4, "tokens": 6735, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 25.77, "model_calls": 4, "tokens": 6739, "chars": 3269, "incomplete": false, "cer_pct": 0.06}
+      }
+    },
+    "nomask": {
+      "about": "no attention mask on 1-token decode steps",
+      "total_seconds": 195.47,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 3.72, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 3.65, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 2.41, "model_calls": 1, "tokens": 1116, "chars": 4367, "incomplete": false, "cer_pct": 26.76},
+        "en-serif-26-noisy.jpg": {"seconds": 2.56, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 33.64, "model_calls": 10, "tokens": 16354, "chars": 5060, "incomplete": false, "cer_pct": 0.02},
+        "fa-naskh-22-noisy.jpg": {"seconds": 24.74, "model_calls": 7, "tokens": 12257, "chars": 5060, "incomplete": false, "cer_pct": 0.08},
+        "fa-naskh-28-clean.jpg": {"seconds": 13.93, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 13.97, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 34.46, "model_calls": 10, "tokens": 16746, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 33.49, "model_calls": 10, "tokens": 16744, "chars": 5579, "incomplete": false, "cer_pct": 0.07},
+        "fa-vazir-26-clean.jpg": {"seconds": 14.38, "model_calls": 4, "tokens": 6735, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 14.52, "model_calls": 4, "tokens": 6739, "chars": 3269, "incomplete": false, "cer_pct": 0.06}
+      }
+    },
+    "nomask,stop": {
+      "about": "no mask + early stop",
+      "total_seconds": 201.46,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 3.77, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 3.74, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 2.44, "model_calls": 1, "tokens": 1116, "chars": 4367, "incomplete": false, "cer_pct": 26.76},
+        "en-serif-26-noisy.jpg": {"seconds": 2.6, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 34.48, "model_calls": 10, "tokens": 16354, "chars": 5060, "incomplete": false, "cer_pct": 0.02},
+        "fa-naskh-22-noisy.jpg": {"seconds": 25.47, "model_calls": 7, "tokens": 12257, "chars": 5060, "incomplete": false, "cer_pct": 0.08},
+        "fa-naskh-28-clean.jpg": {"seconds": 14.56, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 14.4, "model_calls": 4, "tokens": 6539, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 35.85, "model_calls": 10, "tokens": 16746, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 34.58, "model_calls": 10, "tokens": 16744, "chars": 5579, "incomplete": false, "cer_pct": 0.07},
+        "fa-vazir-26-clean.jpg": {"seconds": 14.82, "model_calls": 4, "tokens": 6735, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 14.75, "model_calls": 4, "tokens": 6739, "chars": 3269, "incomplete": false, "cer_pct": 0.06}
+      }
+    },
+    "stop,cap4096": {
+      "about": "early stop + 4096 token cap  == server with masked=1",
+      "total_seconds": 207.81,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 6.39, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 6.51, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 3.42, "model_calls": 1, "tokens": 972, "chars": 3828, "incomplete": false, "cer_pct": 11.12},
+        "en-serif-26-noisy.jpg": {"seconds": 4.25, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 18.0, "model_calls": 1, "tokens": 4065, "chars": 5057, "incomplete": false, "cer_pct": 0.06},
+        "fa-naskh-22-noisy.jpg": {"seconds": 18.12, "model_calls": 1, "tokens": 4066, "chars": 5060, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-clean.jpg": {"seconds": 9.5, "model_calls": 1, "tokens": 2443, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 9.59, "model_calls": 1, "tokens": 2443, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 56.5, "model_calls": 4, "tokens": 12650, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 54.41, "model_calls": 4, "tokens": 12650, "chars": 5579, "incomplete": false, "cer_pct": 0.04},
+        "fa-vazir-26-clean.jpg": {"seconds": 10.56, "model_calls": 1, "tokens": 2639, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 10.56, "model_calls": 1, "tokens": 2639, "chars": 3267, "incomplete": false, "cer_pct": 0.0}
+      }
+    },
+    "nomask,stop,cap4096": {
+      "about": "no mask + early stop + 4096 cap  == server default (shipped)",
+      "total_seconds": 107.99,
+      "pages": {
+        "en-serif-20-clean.jpg": {"seconds": 3.65, "model_calls": 1, "tokens": 1752, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-20-noisy.jpg": {"seconds": 3.63, "model_calls": 1, "tokens": 1749, "chars": 7284, "incomplete": false, "cer_pct": 25.74},
+        "en-serif-26-clean.jpg": {"seconds": 2.36, "model_calls": 1, "tokens": 1116, "chars": 4367, "incomplete": false, "cer_pct": 26.76},
+        "en-serif-26-noisy.jpg": {"seconds": 2.57, "model_calls": 1, "tokens": 1204, "chars": 4942, "incomplete": false, "cer_pct": 43.45},
+        "fa-naskh-22-clean.jpg": {"seconds": 9.0, "model_calls": 1, "tokens": 4066, "chars": 5060, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-22-noisy.jpg": {"seconds": 9.04, "model_calls": 1, "tokens": 4066, "chars": 5060, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-clean.jpg": {"seconds": 5.09, "model_calls": 1, "tokens": 2443, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-naskh-28-noisy.jpg": {"seconds": 5.12, "model_calls": 1, "tokens": 2443, "chars": 3020, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-clean.jpg": {"seconds": 28.45, "model_calls": 4, "tokens": 12650, "chars": 5579, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-20-noisy.jpg": {"seconds": 27.88, "model_calls": 4, "tokens": 12650, "chars": 5579, "incomplete": false, "cer_pct": 0.04},
+        "fa-vazir-26-clean.jpg": {"seconds": 5.6, "model_calls": 1, "tokens": 2639, "chars": 3267, "incomplete": false, "cer_pct": 0.0},
+        "fa-vazir-26-noisy.jpg": {"seconds": 5.6, "model_calls": 1, "tokens": 2639, "chars": 3267, "incomplete": false, "cer_pct": 0.0}
+      }
+    }
+  }
+}
