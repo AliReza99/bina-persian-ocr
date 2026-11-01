@@ -60,8 +60,9 @@ def _ocr_region(image, prompt, flagged, deadline, bail=False):
     return selected['ocr_prediction']
 
 
-def _ocr_page(image, flagged, deadline, bail=False):
-    return [_ocr_region(image.crop(tuple(r['bbox'])), PROMPT, flagged, deadline, bail) for r in regions(image)['regions']]
+def _ocr_page(image, flagged, deadline, texts, bail=False):
+    for r in regions(image)['regions']:
+        texts.append(_ocr_region(image.crop(tuple(r['bbox'])), PROMPT, flagged, deadline, bail))
 
 
 def transcribe(image, on_start=None, max_seconds=None, masked=False):
@@ -74,11 +75,16 @@ def transcribe(image, on_start=None, max_seconds=None, masked=False):
         if on_start:
             on_start()
         deadline = max_seconds and time.monotonic() + max_seconds
+        texts = first = []
         try:
-            texts = _ocr_page(image, flagged, deadline, bail=True)
+            _ocr_page(image, flagged, deadline, first, bail=True)
         except _Looped:
             # faint show-through from the page's back can make Bina loop; faded to white it often reads.
             # only after a loop: on pages that read fine the contrast change can make Bina invent lines
             flagged.clear()
-            texts = _ocr_page(ImageOps.autocontrast(image.convert('L'), cutoff=2).convert('RGB'), flagged, deadline)
+            texts = []
+            _ocr_page(ImageOps.autocontrast(image.convert('L'), cutoff=2).convert('RGB'), flagged, deadline, texts)
+            # cut short by the time limit or another loop: keep whichever read got further
+            if flagged and len(''.join(first)) > len(''.join(texts)):
+                texts = first
     return {'text': '\n'.join(t for t in texts if t), 'incomplete': bool(flagged)}
