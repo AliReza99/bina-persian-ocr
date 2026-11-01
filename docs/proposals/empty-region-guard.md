@@ -28,7 +28,7 @@ lines and ignores the faint ghosts. Rule:
 | image | regions (y range: boxes) |
 |---|---|
 | show-through book page | 0-714: **0**, 714-879: 1, 879-1334: 4, 1334-1600: **0** |
-| 10 other test pages (`ocr-test/`, `samples/img.jpg`) | 1 region each, 5-62 boxes |
+| 10 other test pages (including `samples/img.jpg`) | 1 region each, 5-62 boxes |
 
 The only 0-box regions were the ghost-only ones. Detector time: 0.5-2.3s per page (it also runs Tesseract reads).
 
@@ -60,7 +60,7 @@ Bad:
 - Add a `StoppingCriteria` next to `LoopStop`: once the future is done and the region has 0 box
   centers, stop when generated tokens > 64 and mark the attempt as looped.
 - Detector error or timeout: no cap.
-- Before merging, run `ocr-test/` and confirm no text changes.
+- Before merging, run a set of real page photos and confirm no text changes.
 
 ## Related ideas (rejected for now)
 

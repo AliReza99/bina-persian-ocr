@@ -23,7 +23,7 @@
 //  http_baseline      first run through the live server's /v2/ocr before any change; it had a 30 s admin time limit,
 //                     so 0e came back incomplete there
 // Known: English synthetic pages have 11-44% CER in every variant (model emits fragments like `fad{i|},`): a quality issue, not speed.
-// Images: real ones in ocr-test/; synthetic ones were generated for this run and are not in the repo.
+// Images: real ones were book pages, not kept in the repo; synthetic ones were generated for this run and are not in the repo.
 {
   "date": "2026-11-01",
   "gpu": "NVIDIA GeForce RTX 3090",
