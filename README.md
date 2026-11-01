@@ -5,10 +5,12 @@ Local HTTP server + web UI for [Reza2kn/Bina-0.4-Koochik](https://huggingface.co
 ```
 model/          model code + configs from HF (weights downloaded)
 server/ocr.py   model loading + transcription (splits regions that loop)
+server/align.py line boxes: where each OCR line sits on the page
 server/app.py   HTTP server
 server/jobs.py  queue admission, pause, SQLite job history
 server/monitor.py  GPU/CPU/RAM samples for the admin page
 server/static/  web UI (vendor/: uPlot charts)
+server/test_*.py  self-checks, run each with .venv/bin/python
 samples/        test images and outputs
 assets/         README screenshots
 data/           job history + thumbnails (created at runtime, not in git)
@@ -64,6 +66,7 @@ Tested on Linux. On other systems the process RAM card shows `-`.
 - **Jobs**: filter by status, client or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
 - **Pause / Resume**: pause rejects new `/api/v1/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
 - **Time limit**: the longest one job may use the model (5 to 3600 s), or no limit. Past it the text read so far comes back with `incomplete: true` and the model is freed for the next job. Kept across restarts.
+- **Client tokens**: make, pause or revoke. Pausing one client rejects only its requests with `503 paused`, others keep running. Kept across restarts.
 - **Clear history** (footer, click twice): deletes all jobs, thumbnails and stored text.
 
 Run as a service on boot: see `deploy/bina-ocr.service`. Job history, thumbnails and extracted text live in `data/` (30 days / 5000 jobs). Anyone with admin access can read the stored text.
@@ -123,23 +126,28 @@ Locating lines never fails the request: if it breaks, `lines` is `[]`. The text 
 | 403 | admin route from another machine |
 | 413 | body over 30 MB, or image over 100 MP |
 | 500 | inference failed |
-| 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin; see `Retry-After` |
+| 503 | `{"error": "busy"}` queue full, or `{"error": "paused"}` paused by admin, for everyone or this client; see `Retry-After` |
 
 **Examples**
 
 ```sh
-curl --data-binary @page.jpg http://127.0.0.1:8001/api/v1/ocr
-curl --data-binary @page.jpg 'http://127.0.0.1:8001/api/v1/ocr?masked=1'
+curl -H "Authorization: Bearer $BINA_TOKEN" --data-binary @page.jpg http://127.0.0.1:8001/api/v1/ocr
+curl -H "Authorization: Bearer $BINA_TOKEN" --data-binary @page.jpg 'http://127.0.0.1:8001/api/v1/ocr?masked=1'
 ```
 
 ```python
-import requests
-r = requests.post('http://127.0.0.1:8001/api/v1/ocr', data=open('page.jpg', 'rb'))
+import os, requests
+r = requests.post('http://127.0.0.1:8001/api/v1/ocr', data=open('page.jpg', 'rb'),
+                  headers={'Authorization': f"Bearer {os.environ['BINA_TOKEN']}"})
 print(r.json()['text'])
 ```
 
 ```js
-const r = await fetch('http://127.0.0.1:8001/api/v1/ocr', { method: 'POST', body: file }); // file: Blob/File/Buffer
+const r = await fetch('http://127.0.0.1:8001/api/v1/ocr', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${BINA_TOKEN}` },
+  body: file, // Blob/File/Buffer
+});
 const { text } = await r.json();
 ```
 
@@ -153,7 +161,7 @@ const { text } = await r.json();
 
 ### Admin
 
-From the Bina machine only, no token. Used by the `/admin` page.
+From the Bina machine only, no token. Other websites get `403` even from a browser on that machine. Used by the `/admin` page.
 
 | Route | Returns |
 |---|---|
@@ -165,10 +173,11 @@ From the Bina machine only, no token. Used by the `/admin` page.
 | `POST /api/admin/pause`, `POST /api/admin/resume` | stop / start accepting `/api/v1/ocr` |
 | `POST /api/admin/limit` | `{"max_seconds": n}` (whole seconds, 5 to 3600) or `{"max_seconds": null}` for no limit |
 | `POST /api/admin/clear` | deletes all job history |
-| `GET /api/admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
+| `GET /api/admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip, paused}]` |
 | `POST /api/admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |
+| `POST /api/admin/tokens/<id>/pause`, `POST /api/admin/tokens/<id>/resume` | stop / start accepting this client only; `{"paused": bool}` |
 | `POST /api/admin/tokens/<id>/revoke` | deletes the token |
-| `POST /api/admin/ocr` | same as `POST /api/v1/ocr` (same query) plus `detector` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
+| `POST /api/admin/ocr` | same as `POST /api/v1/ocr` (same query) plus `detector` (every detector box: `box`, `read`, `used`), no token; the Playground on `/` |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/api/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
 
@@ -179,7 +188,5 @@ Bad query values return `400`.
 This API section, as `text/markdown`. Unknown paths return `404 {"error": "not found", "docs": "/docs"}`.
 
 ### `GET /`
-
-Web UI.
 
 Web UI, from the Bina machine only.
