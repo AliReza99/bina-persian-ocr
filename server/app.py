@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             cache = 'max-age=86400' if path.startswith('/vendor/') else 'no-cache'
             return self.send(200, asset.read_bytes(), ASSET_TYPES[asset.suffix], [('Cache-Control', cache)])
         if path == '/api/admin/state':
-            return self.reply(200, {**jobs.state(), 'stats': jobs.stats(), 'version': VERSION, 'device': ocr.device,
+            return self.reply(200, {**jobs.state(), 'version': VERSION, 'device': ocr.device,
                                     'uptime': round(time.time() - monitor.started), 'samples': monitor.poll(gpu_mem if ocr.device == 'cuda' else None)})
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if path == '/api/admin/series':
@@ -113,8 +113,8 @@ class Handler(BaseHTTPRequestHandler):
                 offset, limit = max(0, int(q.get('offset', 0))), min(200, max(1, int(q.get('limit', 50))))
             except ValueError:
                 return self.reply(400, {'error': 'id, offset and limit must be integers'})
-            rows, total = jobs.recent(sort, status, q.get('client', ''), job_id, offset, limit)
-            return self.reply(200, {'jobs': rows, 'total': total})
+            rows, total, clients = jobs.recent(sort, status, q.get('client', ''), job_id, offset, limit)
+            return self.reply(200, {'jobs': rows, 'total': total, 'clients': clients})
         if path == '/api/admin/tokens':
             return self.reply(200, {'tokens': jobs.tokens()})
         job_id = path.removeprefix('/api/admin/text/')

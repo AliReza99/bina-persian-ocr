@@ -159,9 +159,9 @@ From the Bina machine only, no token. Used by the `/admin` page.
 
 | Route | Returns |
 |---|---|
-| `GET /api/admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `max_seconds` (null: no limit), `stats` (last 24h: `jobs_24h`, `errors_24h`, `incomplete_24h`, `busy_24h`, `success_pct`, `avg_seconds`, `p95_seconds`), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
-| `GET /api/admin/series?range=1h\|24h\|7d` | per bucket `t`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`; plus `scatter` (`[megapixels, seconds]`), `clients` (`[name, count]`) |
-| `GET /api/admin/jobs` | `{"jobs": [...], "total": n}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `id`, `offset`, `limit` (default 50, max 200) |
+| `GET /api/admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `max_seconds` (null: no limit), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
+| `GET /api/admin/series?range=1h\|24h\|7d` | per bucket `t`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`; plus `totals` over the range (`jobs`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`), `clients` (`[name, count]`) |
+| `GET /api/admin/jobs` | `{"jobs": [...], "total": n, "clients": [every client in history]}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `id`, `offset`, `limit` (default 50, max 200) |
 | `GET /api/admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
 | `GET /api/admin/thumb/<id>` | JPEG thumbnail |
 | `POST /api/admin/pause`, `POST /api/admin/resume` | stop / start accepting `/api/v1/ocr` |

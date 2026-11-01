@@ -1,10 +1,6 @@
 import { html } from '/vendor/htm-preact.js';
 
-export const Card = ({ k, v, hint, children }) => html`<div class="card" title=${hint}><div class="k">${k}</div><div class="v">${v}</div>
-  ${hint && html`<div class="hint">${hint}</div>`}${children}</div>`;
-
-// chart card title with a one-line plain-language explanation
-export const Head = ({ k, hint }) => html`<div class="head"><div class="k">${k}</div><div class="hint">${hint}</div></div>`;
+export const Card = ({ k, v, cls = '', children }) => html`<div class="card ${cls}"><div class="k">${k}</div><div class="v">${v}</div>${children}</div>`;
 
 export const Meter = ({ pct }) => html`<div class="meter"><i style=${{ width: Math.min(100, pct) + '%' }}></i></div>`;
 

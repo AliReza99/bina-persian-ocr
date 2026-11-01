@@ -123,7 +123,7 @@ STATUSES = {'': '1', 'ok': 'error IS NULL AND seconds IS NOT NULL AND NOT incomp
 
 
 def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50):
-    """One page of jobs matching the filters, and the total match count. sort and status must be keys of SORTS, STATUSES."""
+    """One page of jobs matching the filters, the total match count, and every client in history. sort and status must be keys of SORTS, STATUSES."""
     where = [STATUSES[status]]
     args = []
     for col, val in (('client', client), ('id', job_id)):
@@ -134,7 +134,8 @@ def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50)
     with _db_lock:
         total = _db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where}', args).fetchone()[0]
         rows = _db.execute(f'SELECT * FROM jobs WHERE {where} ORDER BY {SORTS[sort]} LIMIT ? OFFSET ?', (*args, limit, offset))
-        return [{k: r[k] for k in r.keys() if k != 'text'} for r in rows], total  # text is fetched per job by text()
+        clients = [r[0] for r in _db.execute('SELECT DISTINCT client FROM jobs ORDER BY client')]
+        return [{k: r[k] for k in r.keys() if k != 'text'} for r in rows], total, clients  # text is fetched per job by text()
 
 
 def text(job_id):
@@ -153,17 +154,17 @@ RANGES = {'1h': (3600, 60), '24h': (86400, 3600), '7d': (7 * 86400, 6 * 3600)}  
 
 
 def series(span_name):
-    """Per-bucket counts and latency over the range, plus scatter points and client split."""
+    """Per-bucket counts and latency over the range, totals for the whole range, and client split."""
     span, step = RANGES[span_name]
     now = time.time()
     first = (now - span) // step * step + step
     with _db_lock:
-        rows = _db.execute('SELECT created, client, width, height, seconds, incomplete, error FROM jobs WHERE created >= ?', (first,)).fetchall()
+        rows = _db.execute('SELECT created, client, seconds, incomplete, error FROM jobs WHERE created >= ?', (first,)).fetchall()
         rejects = _db.execute("SELECT created FROM rejects WHERE reason = 'busy' AND created >= ?", (first,)).fetchall()
     n = int((now - first) // step) + 1
     b = {k: [0] * n for k in ('ok', 'incomplete', 'error', 'rejected')}
     secs = [[] for _ in range(n)]
-    clients, scatter = collections.Counter(), []
+    clients = collections.Counter()
     for r in rows:
         i = int((r['created'] - first) // step)
         clients[r['client']] += 1
@@ -172,12 +173,14 @@ def series(span_name):
         elif r['seconds'] is not None:
             b['incomplete' if r['incomplete'] else 'ok'][i] += 1
             secs[i].append(r['seconds'])
-            scatter.append((round(r['width'] * r['height'] / 1e6, 2), r['seconds']))
     for (created,) in rejects:
         b['rejected'][int((created - first) // step)] += 1
+    every = [x for s in secs for x in s]
+    totals = {k: sum(v) for k, v in b.items()} | {'jobs': len(rows),
+              'avg': round(sum(every) / len(every), 2) if every else None, 'p95': _p95(every)}
     return {'t': [first + i * step for i in range(n)], **b,
             'avg': [round(sum(s) / len(s), 2) if s else None for s in secs], 'p95': [_p95(s) for s in secs],
-            'scatter': sorted(scatter), 'clients': clients.most_common()}
+            'totals': totals, 'clients': clients.most_common()}
 
 
 def clear():
@@ -188,19 +191,6 @@ def clear():
     for p in THUMBS.glob('*.jpg'):
         p.unlink(missing_ok=True)
 
-
-def stats():
-    day = time.time() - 86400
-    with _db_lock:
-        secs = [r[0] for r in _db.execute('SELECT seconds FROM jobs WHERE error IS NULL AND seconds IS NOT NULL AND created > ?', (day,))]
-        row = _db.execute('SELECT COUNT(*), SUM(error IS NOT NULL), SUM(incomplete), SUM(seconds IS NOT NULL OR error IS NOT NULL) FROM jobs WHERE created > ?', (day,)).fetchone()
-        busy = _db.execute("SELECT COUNT(*) FROM rejects WHERE reason = 'busy' AND created > ?", (day,)).fetchone()[0]
-    done, errors, incomplete = row[3] or 0, row[1] or 0, row[2] or 0
-    return {
-        'jobs_24h': row[0], 'errors_24h': errors, 'incomplete_24h': incomplete, 'busy_24h': busy,
-        'success_pct': round((done - errors - incomplete) / done * 100, 1) if done else None,
-        'avg_seconds': round(sum(secs) / len(secs), 2) if secs else None, 'p95_seconds': _p95(secs),
-    }
 
 
 def state():

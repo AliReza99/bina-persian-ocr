@@ -30,14 +30,14 @@ export function Tokens() {
   const dialog = useRef();
   const open = () => { setName(''); setMade(null); dialog.current.showModal(); };
 
-  return html`<h2>Client tokens <button class="primary" style="margin-inline-start:auto" onClick=${open}>New token</button></h2>
+  return html`<section><h2>Client tokens <span class="grow"></span><button onClick=${open}>New token</button></h2>
   <div class="card table">
     <table>
-      <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
-      <tbody>${tokens.length ? tokens.map(t => html`<tr key=${t.id}><td>${t.name}</td><td>${when(t.created)}</td>
+      <thead><tr><th>Name</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
+      <tbody>${tokens.length ? tokens.map(t => html`<tr key=${t.id} class="static"><td title=${"created " + when(t.created)}>${t.name}</td>
         <td>${t.last_used ? ago(t.last_used) : 'never'}</td><td>${t.last_ip ?? '-'}</td>
-        <td><button class="danger" onClick=${() => revoke(t)}>${armed === t.id ? `Click again to revoke ${t.name}` : 'Revoke'}</button></td></tr>`)
-        : html`<tr><td colspan="5" style="text-align:center;color:var(--muted)">No client tokens yet</td></tr>`}</tbody>
+        <td class="end"><button class="danger sm" onClick=${() => revoke(t)}>${armed === t.id ? 'Confirm revoke' : 'Revoke'}</button></td></tr>`)
+        : html`<tr class="static"><td colspan="4" class="empty">No tokens</td></tr>`}</tbody>
     </table>
   </div>
   <dialog ref=${dialog} aria-labelledby="t-title" onClose=${() => setMade(null)} onClick=${e => e.target === dialog.current && !made && dialog.current.close()}>
@@ -50,7 +50,7 @@ export function Tokens() {
       </div>
       <div style="text-align:end"><button class="primary" onClick=${() => dialog.current.close()}>Done</button></div>
     </div>` : html`<form onSubmit=${create}>
-      <label class="k" for="t-name">Name, so you can tell clients apart in the jobs list</label>
+      <label class="k" for="t-name">Name (shown as the client in jobs)</label>
       <input id="t-name" required maxlength="60" placeholder="e.g. notewise-prod" autofocus style="display:block;width:100%;margin:6px 0 16px"
         value=${name} onInput=${e => setName(e.target.value)}/>
       <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -58,5 +58,5 @@ export function Tokens() {
         <button class="primary">Create token</button>
       </div>
     </form>`}
-  </dialog>`;
+  </dialog></section>`;
 }
