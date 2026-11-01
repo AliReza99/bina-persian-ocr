@@ -25,6 +25,8 @@ _db.execute('''CREATE TABLE IF NOT EXISTS tokens (
 if 'paused' not in [c[1] for c in _db.execute('PRAGMA table_info(tokens)')]:  # added with per-client pause
     _db.execute('ALTER TABLE tokens ADD COLUMN paused INTEGER DEFAULT 0')
 _db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value)')
+# Nothing runs yet, so an unfinished row is a job the last server died holding.
+_db.execute("UPDATE jobs SET error = 'server stopped' WHERE seconds IS NULL AND error IS NULL")
 _db.commit()
 _db_lock = threading.Lock()
 
