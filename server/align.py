@@ -42,23 +42,43 @@ def _tesseract(rgb, *args):
     return subprocess.run(['tesseract', '-', '-', *args], input=png.tobytes(), capture_output=True, timeout=60).stdout.decode()
 
 
+def owner(polys, c):
+    """Index of the box point c belongs to, or None. Boxes of curved lines are tall and overlap
+    the next line, so of those containing c take the one whose midline is nearest."""
+    def off(p):
+        a, b = (p[0] + p[3]) / 2, (p[1] + p[2]) / 2
+        u, v = (b - a) / np.linalg.norm(b - a), np.subtract(c, a)
+        return abs(u[0] * v[1] - u[1] * v[0])
+    return min((k for k, p in enumerate(polys) if cv2.pointPolygonTest(p, c, False) >= 0), key=lambda k: off(polys[k]), default=None)
+
+
+def first_box(polys, c):
+    """Index of the first box containing point c, or None."""
+    return next((k for k, p in enumerate(polys) if cv2.pointPolygonTest(p, c, False) >= 0), None)
+
+
 def tesseract_reads(rgb, polys):
-    """Rough Persian text per detected box: the Tesseract words whose centers fall inside it."""
+    """Rough Persian text per detected box: the Tesseract words whose centers fall inside it.
+    Returns two lists of reads, one per way of sharing words between overlapping boxes."""
     rows = csv.DictReader(io.StringIO(_tesseract(rgb, '-l', 'fas', '--psm', '3', 'tsv')), delimiter='\t', quoting=csv.QUOTE_NONE)
     words = [((int(r['left']) + int(r['width']) / 2, int(r['top']) + int(r['height']) / 2), r['text'])
              for r in rows if r['level'] == '5' and r['text'].strip()]
-    reads = [[] for _ in polys]
-    for c, w in words:
-        for k, p in enumerate(polys):
-            if cv2.pointPolygonTest(p, c, False) >= 0:
-                reads[k].append(w)
-                break
+    alone = {}
+
+    def read_alone(k):  # the page pass skips some blocks; read this one line on its own
+        if k not in alone:
+            x, y, w, h = cv2.boundingRect(polys[k])
+            alone[k] = _tesseract(rgb[max(0, y):y + h, max(0, x):x + w], '-l', 'fas', '--psm', '7').strip()
+        return alone[k]
+
     out = []
-    for p, r in zip(polys, reads):
-        if not r:  # the page pass skips some blocks; read this one line on its own
-            x, y, w, h = cv2.boundingRect(p)
-            r = [_tesseract(rgb[max(0, y):y + h, max(0, x):x + w], '-l', 'fas', '--psm', '7').strip()]
-        out.append(' '.join(r))
+    for pick in (owner, first_box):
+        reads = [[] for _ in polys]
+        for c, w in words:
+            k = pick(polys, c)
+            if k is not None:
+                reads[k].append(w)
+        out.append([' '.join(r) if r else read_alone(k) for k, r in enumerate(reads)])
     return out
 
 
@@ -67,7 +87,7 @@ def center(q):
 
 
 def match(boxes, keys, per_char, width):
-    """Order-keeping pairing of boxes (top to bottom) with lines, like a diff: {line: box index}.
+    """Order-keeping pairing of boxes (top to bottom) with lines, like a diff: ({line: box index}, total score).
     A pair scores on rough-read similarity and on box width vs line length; skips cost nothing."""
     def score(i, j):
         k = keys[j]
@@ -98,7 +118,7 @@ def match(boxes, keys, per_char, width):
                 placed[j] = i
             i += 1
             j += 1
-    return placed
+    return placed, best[0, 0]
 
 
 def leftover_rows(boxes, idx):
@@ -174,7 +194,8 @@ def fill(quad, used, boxes, keys, per_char, rtl):
 
 
 def persian_rows(image):
-    """Detector boxes with their Tesseract reads, top to bottom. Needs no OCR text, so it can run while Bina reads."""
+    """Options of detector boxes with their Tesseract reads, top to bottom; lines() keeps the one fitting the text best.
+    Needs no OCR text, so it can run while Bina reads."""
     rgb = np.asarray(image)
     with _lock:
         # detector boxes only (the recognizer would drop low-confidence ones); Tesseract reads them
@@ -182,36 +203,38 @@ def persian_rows(image):
         if res.boxes is None:
             return []
         polys = sorted(res.boxes.tolist(), key=lambda b: center(b)[1])
-        return list(zip(polys, tesseract_reads(rgb, [np.array(b, dtype=np.float32) for b in polys])))
+        reads = tesseract_reads(rgb, [np.array(b, dtype=np.float32) for b in polys])
+        return [list(zip(polys, r)) for r in (reads if reads[0] != reads[1] else reads[:1])]
 
 
 def lines(image, text, debug=None, rows=None):
     """image: the RGB PIL image that was read; text: its OCR text.
-    Returns [{'line': index in text.split('\\n'), 'box': 4 [x, y] points as fractions of the image, 'guess'}].
+    Returns [{'index': index in text.split('\\n'), 'text': that line, 'box': 4 [x, y] points as fractions of the image, 'guess'}].
     debug: a list to fill with every detector box {'box', 'read', 'used'} (used = matched to a line, not guessed).
     rows: a Future of persian_rows(image) started earlier; used only if the text is Persian."""
-    index = [i for i, l in enumerate(text.split('\n')) if l.strip()]  # back to raw line numbers
-    keys = [norm(text.split('\n')[i]) for i in index]
+    raw = text.split('\n')
+    index = [i for i, l in enumerate(raw) if l.strip()]  # back to raw line numbers
+    keys = [norm(raw[i]) for i in index]
     if not keys:
         return []
     rtl = sum('؀' <= c <= 'ۿ' for c in text) > len(text) * .3
     if rtl:
-        boxes = rows.result() if rows else persian_rows(image)
+        options = rows.result() if rows else persian_rows(image)
     else:
         with _lock:
             res = ENGLISH(np.asarray(image))
-        boxes = sorted(zip(res.boxes.tolist(), getattr(res, 'txts', None) or [''] * len(res.boxes)), key=lambda b: center(b[0])[1]) if res.boxes is not None else []
-    if not boxes:
+        options = [sorted(zip(res.boxes.tolist(), getattr(res, 'txts', None) or [''] * len(res.boxes)), key=lambda b: center(b[0])[1])] if res.boxes is not None else []
+    if not options:
         return []
-    width = [np.linalg.norm(np.subtract(b[1], b[0])) for b, _ in boxes]
+    width = [np.linalg.norm(np.subtract(b[1], b[0])) for b, _ in options[0]]
     per_char = sum(width) / max(1, sum(map(len, keys)))  # page-wide pixels per character
-    placed = match(boxes, keys, per_char, width)
-    quad = {j: np.array(boxes[i][0], float) for j, i in placed.items()}
+    boxes, placed, _ = max(((b, *match(b, keys, per_char, width)) for b in options), key=lambda o: o[2])
+    quad ={j: np.array(boxes[i][0], float) for j, i in placed.items()}
     guessed = fill(quad, set(placed.values()), boxes, keys, per_char, rtl) if quad else {}
     size = np.array(image.size, float)
     frac = lambda q: [[round(float(v), 4) for v in np.clip(p / size, 0, 1)] for p in np.asarray(q, float)]
     if debug is not None:
         used = set(placed.values())
         debug += [{'box': frac(b), 'read': r, 'used': i in used} for i, (b, r) in enumerate(boxes)]
-    return [{'line': index[j], 'box': frac(q), 'guess': j in guessed}
+    return [{'index': index[j], 'text': raw[index[j]], 'box': frac(q), 'guess': j in guessed}
             for j, q in sorted({**quad, **guessed}.items())]

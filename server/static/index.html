@@ -166,7 +166,7 @@ const sec = s => s.toFixed(2) + ' s';
 
 // every non-empty OCR line with its box state: ok / guess / miss
 function rowsOf(r) {
-  const boxes = new Map((r.lines || []).map(l => [l.line, l]));
+  const boxes = new Map((r.lines || []).map(l => [l.index, l]));
   return r.text.split('\n').map((t, i) => {
     const b = boxes.get(i);
     return { i, t, box: b?.box, state: b ? (b.guess ? 'guess' : 'ok') : 'miss' };
@@ -212,7 +212,7 @@ type OcrResponse = {
   incomplete: boolean; // part of the text may be missing
   seconds: number;     // inference time (GPU)
   lines: {
-    line: number;   // index into text.split('\\n')
+    index: number;  // into text.split('\\n')
     box: [Point, Point, Point, Point]; // from top-left, clockwise
     guess: boolean; // inferred from neighbouring lines
   }[];
@@ -259,10 +259,10 @@ function Page({ item, rows, show, hot, setHot }) {
       ${show.det && det.map(d => html`<polygon class=${hot === d.k ? 'hot' : 'det'} onMouseEnter=${() => setHot(d.k)} onMouseLeave=${() => setHot(null)} points=${pts(d.box)}><title>Unused detector box: ${d.read || '(no read)'}</title></polygon>`)}
       ${rows.filter(r => r.box && show[r.state]).map(r => html`
         <polygon class=${hot === r.i ? 'hot' : r.state} points=${pts(r.box)}
-          onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}><title>${r.i + 1}: ${r.t}</title></polygon>`)}
+          onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}><title>${r.i}: ${r.t}</title></polygon>`)}
     </svg>
     ${show.num && rows.filter(r => r.box && show[r.state]).map(r => html`
-      <span class=${'tag ' + (hot === r.i ? 'hot' : r.state)} style=${corner(r.box)}>${r.i + 1}</span>`)}
+      <span class=${'tag ' + (hot === r.i ? 'hot' : r.state)} style=${corner(r.box)}>${r.i}</span>`)}
   </div>`;
 }
 
@@ -274,7 +274,7 @@ function Lines({ item, rows, hot, setHot }) {
       ${rows.map(r => html`
         <div class=${'row ' + (r.state === 'miss' ? 'miss ' : '') + (hot === r.i ? 'hot' : '')} title=${DOT[r.state]}
           onMouseEnter=${() => setHot(r.i)} onMouseLeave=${() => setHot(null)}>
-          <span class=${'n ' + r.state}>${r.i + 1}</span><span class="t">${r.t}</span>
+          <span class=${'n ' + r.state}>${r.i}</span><span class="t">${r.t}</span>
         </div>`)}
       ${!rows.length && html`<div class="empty">Nothing here</div>`}
     </div>`;

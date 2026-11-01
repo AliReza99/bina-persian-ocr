@@ -97,7 +97,7 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
   "incomplete": false,
   "seconds": 3.2,
   "lines": [
-    { "line": 0, "box": [[0.34, 0.05], [0.53, 0.05], [0.53, 0.07], [0.34, 0.07]], "guess": false }
+    { "index": 0, "text": "در باب اعتماد به نفس", "box": [[0.34, 0.05], [0.53, 0.05], [0.53, 0.07], [0.34, 0.07]], "guess": false }
   ],
   "align_seconds": 1.8
 }
@@ -109,7 +109,8 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | `incomplete` | bool | `true` if some region still hit a repetition loop after splitting, or the admin time limit ran out; part of the text may be missing |
 | `seconds` | number | inference time |
 | `lines` | array | one item per located line, in text order; lines with no box are left out |
-| `lines[].line` | int | index into `text.split('\n')` (blank lines count) |
+| `lines[].index` | int | index into `text.split('\n')` (blank lines count) |
+| `lines[].text` | string | that line, same as `text.split('\n')[index]` |
 | `lines[].box` | 4 × `[x, y]` | corners as fractions (0..1) of the image width and height, starting top-left, clockwise; a quad, so tilted lines fit |
 | `lines[].guess` | bool | `true` when the box was inferred from the lines around it rather than matched directly |
 | `align_seconds` | number | time to locate the lines (CPU, about 0.3 to 3 s), after `seconds` of inference |
