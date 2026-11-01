@@ -112,21 +112,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {'error': f'range must be one of {list(jobs.RANGES)}'})
             return self.reply(200, jobs.series(q.get('range', '24h')))
         if path == '/api/admin/jobs':
-            sort, status = q.get('sort', 'recent'), q.get('status', '')
-            if sort not in jobs.SORTS or status not in jobs.STATUSES:
-                return self.reply(400, {'error': f'sort must be one of {list(jobs.SORTS)}, status one of {list(jobs.STATUSES)}'})
+            sort, status, flag = q.get('sort', 'recent'), q.get('status', ''), q.get('flag', '')
+            if sort not in jobs.SORTS or status not in jobs.STATUSES or flag not in ('', 'any', *align.FLAGS):
+                return self.reply(400, {'error': f'sort must be one of {list(jobs.SORTS)}, status one of {list(jobs.STATUSES)}, flag one of {["any", *align.FLAGS]}'})
             try:
                 job_id = int(q['id']) if q.get('id') else None
                 offset, limit = max(0, int(q.get('offset', 0))), min(200, max(1, int(q.get('limit', 50))))
             except ValueError:
                 return self.reply(400, {'error': 'id, offset and limit must be integers'})
-            rows, total, clients = jobs.recent(sort, status, q.get('client', ''), job_id, offset, limit)
+            rows, total, clients = jobs.recent(sort, status, q.get('client', ''), job_id, offset, limit, flag)
             return self.reply(200, {'jobs': rows, 'total': total, 'clients': clients})
         if path == '/api/admin/tokens':
             return self.reply(200, {'tokens': jobs.tokens()})
         job_id = path.removeprefix('/api/admin/text/')
         if job_id != path and job_id.isdigit():
-            return self.reply(200, {'text': jobs.text(int(job_id))})
+            return self.reply(200, {'text': jobs.text(int(job_id)), 'lines': jobs.lines(int(job_id))})
         job_id = path.removeprefix('/api/admin/thumb/')
         if job_id != path and job_id.isdigit() and (jobs.THUMBS / f'{job_id}.jpg').exists():
             return self.send(200, (jobs.THUMBS / f'{job_id}.jpg').read_bytes(), 'image/jpeg')
@@ -230,13 +230,15 @@ class Handler(BaseHTTPRequestHandler):
         # matching needs the text, so it runs after the model lock is released
         started = time.monotonic()
         try:
-            detector = [] if debug else None  # the test page also gets every detector box, to see misses
+            detector = []
             extra['lines'] = align.lines(image, result['text'], detector, rows)
-            if debug:
+            extra['flags'] = align.flags(result['text'], extra['lines'], [d['box'] for d in detector])
+            jobs.set_lines(job_id, extra['lines'], extra['flags'])
+            if debug:  # the test page also gets every detector box, to see misses
                 extra['detector'] = detector
         except Exception as e:  # boxes are extra: never fail a page that was read
             print(f'align failed on job {job_id}: {e!r}', file=sys.stderr, flush=True)
-            extra['lines'] = []
+            extra['lines'], extra['flags'] = [], {}
         extra['align_seconds'] = round(time.monotonic() - started, 2)
         self.reply(200, {**result, 'seconds': seconds, **extra})
 

@@ -34,4 +34,18 @@ rows = Future()
 rows.set_result([worse, better])
 picked = align.lines(Image.new('RGB', (100, 60), 'white'), f'{one}\n{two}', None, rows)
 assert [(l['index'], l['guess']) for l in picked] == [(0, False), (1, False)], 'did not keep the option fitting the text best'
+row = lambda y, x0=.2, x1=.8: [[x0, y], [x1, y], [x1, y + .02], [x0, y + .02]]
+page = [row(.1 + i * .04) for i in range(12)]
+boxed = lambda n: [{'index': i, 'text': f'خط شماره {i} از این صفحه کتاب', 'box': page[i], 'guess': False} for i in range(n)]
+sane = '\n'.join(l['text'] for l in boxed(12))
+assert align.flags(sane, boxed(12), page) == {}, 'clean page flagged'
+assert set(align.flags('\n'.join(l['text'] for l in boxed(6)), boxed(6), page)) == {'rows_no_box'}, 'half the rows without boxes not flagged'
+facing = [{'index': i, 'text': f'تکه {i} از صفحه روبرو', 'box': row(.1 + i * .04, .85, .98), 'guess': False} for i in range(5)]
+assert 'boxes_off_column' in align.flags(sane, boxed(12) + facing, page), 'boxes on the facing page not flagged'
+twice = boxed(12) + [{**l, 'index': l['index'] + 12} for l in boxed(3)]
+assert align.flags(sane, twice, page)['replay_in_boxes'] == '3/15 boxes', 'replay not flagged'
+assert 'bad_chars_in_box' in align.flags(sane, [{**boxed(1)[0], 'text': 'خط <table>'}], page), 'junk not flagged'
+assert 'merged_paragraph' in align.flags(sane, [{**boxed(1)[0], 'text': 'ک' * 200}], page), 'merged paragraph not flagged'
+assert 'box_too_wide' in align.flags(sane, [{**boxed(1)[0], 'box': row(.1, 0, 1)}], page), 'wide box not flagged'
+assert set(align.flags('تصویر', [], page)) == {'no_lines'} and align.flags('', [], []) == {}, 'no lines not flagged'
 print(f'ok: {len(lines)}/{real} lines placed, {sum(l["guess"] for l in lines)} guessed')

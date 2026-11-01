@@ -64,6 +64,7 @@ Tested on Linux. On other systems the process RAM card shows `-`.
 - **Last 24 hours**: jobs, success %, errors, incomplete, avg and p95 seconds, requests rejected because the queue was full.
 - **Trends** (1h / 24h / 7d): jobs per bucket, latency, seconds vs image size, top clients.
 - **Jobs**: filter by status, client or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
+- **Flags**: pages whose line boxes may deserve a look (filter *Flagged*, or by reason). Click a job to see its line boxes on the image, green matched, orange guessed. Heuristics for review: some flagged pages are fine, and pages without boxes problems can still have junk in `text`.
 - **Pause / Resume**: pause rejects new `/api/v1/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
 - **Time limit**: the longest one job may use the model (5 to 3600 s), or no limit. Past it the text read so far comes back with `incomplete: true` and the model is freed for the next job. Kept across restarts.
 - **Client tokens**: make, pause or revoke. Pausing one client rejects only its requests with `503 paused`, others keep running. Kept across restarts.
@@ -99,6 +100,7 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
   "lines": [
     { "index": 0, "text": "در باب اعتماد به نفس", "box": [[0.34, 0.05], [0.53, 0.05], [0.53, 0.07], [0.34, 0.07]], "guess": false }
   ],
+  "flags": {},
   "align_seconds": 1.8
 }
 ```
@@ -113,9 +115,10 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | `lines[].text` | string | that line, same as `text.split('\n')[index]` |
 | `lines[].box` | 4 × `[x, y]` | corners as fractions (0..1) of the image width and height, starting top-left, clockwise; a quad, so tilted lines fit |
 | `lines[].guess` | bool | `true` when the box was inferred from the lines around it rather than matched directly |
+| `flags` | object | reasons the line boxes may deserve a human look, `{name: detail}`; `{}` when none. Heuristic, never changes the output. Names: `boxes_off_column`, `rows_no_box`, `box_too_wide`, `replay_in_boxes`, `bad_chars_in_box`, `merged_paragraph`, `no_lines` |
 | `align_seconds` | number | time to locate the lines (CPU, about 0.3 to 3 s), after `seconds` of inference |
 
-Locating lines never fails the request: if it breaks, `lines` is `[]`. The text is always the model's; the boxes only say where it is. On a typical page about 85% of lines get a box; most of the rest are fragments with nothing to point at.
+Locating lines never fails the request: if it breaks, `lines` is `[]` and `flags` is `{}`. The text is always the model's; the boxes only say where it is. On a typical page about 85% of lines get a box; most of the rest are fragments with nothing to point at.
 
 **Errors** (all `{"error": "<message>"}`)
 
@@ -168,8 +171,8 @@ From the Bina machine only, no token. Other websites get `403` even from a brows
 |---|---|
 | `GET /api/admin/state` | `paused`, `running` (`{id, client, started}` or null), `waiting`, `max_waiting`, `max_seconds` (null: no limit), `version`, `device`, `uptime` (s), `samples` (live metrics, see below) |
 | `GET /api/admin/series?range=1h\|24h\|7d` | per bucket `t`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`; plus `totals` over the range (`jobs`, `ok`, `incomplete`, `error`, `rejected`, `avg`, `p95`), `clients` (`[name, count]`) |
-| `GET /api/admin/jobs` | `{"jobs": [...], "total": n, "clients": [every client in history]}`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `client`, `id`, `offset`, `limit` (default 50, max 200) |
-| `GET /api/admin/text/<id>` | `{"text": "..."}`, null for failed jobs and jobs recorded before text was stored |
+| `GET /api/admin/jobs` | `{"jobs": [...], "total": n, "clients": [every client in history]}`. Each job has `flags`. Query: `sort` (`recent`, `slowest`, `failed`), `status` (`ok`, `incomplete`, `error`, `running`), `flag` (`any` or one flag name), `client`, `id`, `offset`, `limit` (default 50, max 200) |
+| `GET /api/admin/text/<id>` | `{"text": "...", "lines": [...]}`; `text` null for failed jobs and jobs recorded before text was stored, `lines` `[]` without boxes |
 | `GET /api/admin/thumb/<id>` | JPEG thumbnail |
 | `POST /api/admin/pause`, `POST /api/admin/resume` | stop / start accepting `/api/v1/ocr` |
 | `POST /api/admin/limit` | `{"max_seconds": n}` (whole seconds, 5 to 3600) or `{"max_seconds": null}` for no limit |

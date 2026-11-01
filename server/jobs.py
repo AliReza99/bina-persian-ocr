@@ -1,5 +1,5 @@
 """Admission control (pause, bounded wait), SQLite job history with thumbnails, and client tokens."""
-import collections, hashlib, pathlib, secrets, sqlite3, threading, time
+import collections, hashlib, json, pathlib, secrets, sqlite3, threading, time
 
 DATA = pathlib.Path(__file__).resolve().parent.parent / 'data'
 THUMBS = DATA / 'thumbs'
@@ -19,6 +19,9 @@ if 'text' not in _cols:  # added after the first release
     _db.execute('ALTER TABLE jobs ADD COLUMN text TEXT')
 if 'ip' not in _cols:  # added with client tokens
     _db.execute('ALTER TABLE jobs ADD COLUMN ip TEXT')
+if 'flags' not in _cols:  # added with review flags; JSON, null until the line boxes are done
+    _db.execute('ALTER TABLE jobs ADD COLUMN flags TEXT')
+    _db.execute('ALTER TABLE jobs ADD COLUMN lines TEXT')
 # Only a hash is kept: a token is shown once, when it's made.
 _db.execute('''CREATE TABLE IF NOT EXISTS tokens (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE, hash TEXT UNIQUE, created REAL, last_used REAL, last_ip TEXT)''')
@@ -105,6 +108,13 @@ def finish(job_id, seconds, result=None, error=None):
     _prune()
 
 
+def set_lines(job_id, lines, flags):
+    """Line boxes and review flags of a finished job; they come after finish(), once the boxes are matched."""
+    with _db_lock:
+        _db.execute('UPDATE jobs SET lines=?, flags=? WHERE id=?', (json.dumps(lines), json.dumps(flags), job_id))
+        _db.commit()
+
+
 def _prune():
     with _db_lock:
         old = [r[0] for r in _db.execute(
@@ -127,10 +137,16 @@ STATUSES = {'': '1', 'ok': 'error IS NULL AND seconds IS NOT NULL AND NOT incomp
             'error': 'error IS NOT NULL', 'running': 'seconds IS NULL AND error IS NULL'}
 
 
-def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50):
-    """One page of jobs matching the filters, the total match count, and every client in history. sort and status must be keys of SORTS, STATUSES."""
+def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50, flag=''):
+    """One page of jobs matching the filters, the total match count, and every client in history. sort and status must be keys of SORTS, STATUSES.
+    flag: '' for all, 'any' for jobs with a review flag, or one flag's name (trusted, it goes in a JSON path)."""
     where = [STATUSES[status]]
     args = []
+    if flag == 'any':
+        where.append("flags IS NOT NULL AND flags != '{}'")
+    elif flag:
+        where.append('json_extract(flags, ?) IS NOT NULL')
+        args.append(f'$.{flag}')
     for col, val in (('client', client), ('id', job_id)):
         if val not in ('', None):
             where.append(f'{col} = ?')
@@ -140,7 +156,8 @@ def recent(sort='recent', status='', client='', job_id=None, offset=0, limit=50)
         total = _db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where}', args).fetchone()[0]
         rows = _db.execute(f'SELECT * FROM jobs WHERE {where} ORDER BY {SORTS[sort]} LIMIT ? OFFSET ?', (*args, limit, offset))
         clients = [r[0] for r in _db.execute('SELECT DISTINCT client FROM jobs ORDER BY client')]
-        return [{k: r[k] for k in r.keys() if k != 'text'} for r in rows], total, clients  # text is fetched per job by text()
+        # text and lines are fetched per job by text() and lines()
+        return [{k: json.loads(r[k] or '{}') if k == 'flags' else r[k] for k in r.keys() if k not in ('text', 'lines')} for r in rows], total, clients
 
 
 def text(job_id):
@@ -148,6 +165,13 @@ def text(job_id):
     with _db_lock:
         row = _db.execute('SELECT text FROM jobs WHERE id = ?', (job_id,)).fetchone()
     return row and row[0]
+
+
+def lines(job_id):
+    """Line boxes of one job; [] if it has none."""
+    with _db_lock:
+        row = _db.execute('SELECT lines FROM jobs WHERE id = ?', (job_id,)).fetchone()
+    return json.loads(row and row[0] or '[]')
 
 
 def _p95(secs):

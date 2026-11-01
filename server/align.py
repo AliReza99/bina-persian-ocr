@@ -4,7 +4,7 @@ A line detector (PP-OCRv5) finds text rows; a cheap reader (Tesseract for Persia
 English) reads each row roughly, only to tell which OCR line it is. The text itself stays Bina's.
 Lines the matcher skips get a guessed box from the lines around them, flagged `guess`.
 """
-import csv, io, re, subprocess, threading, unicodedata
+import collections, csv, io, re, subprocess, threading, unicodedata
 from difflib import SequenceMatcher
 
 import cv2
@@ -238,3 +238,63 @@ def lines(image, text, debug=None, rows=None):
         debug += [{'box': frac(b), 'read': r, 'used': i in used} for i, (b, r) in enumerate(boxes)]
     return [{'index': index[j], 'text': raw[index[j]], 'box': frac(q), 'guess': j in guessed}
             for j, q in sorted({**quad, **guessed}.items())]
+
+
+FLAGS = ('boxes_off_column', 'rows_no_box', 'box_too_wide', 'replay_in_boxes', 'bad_chars_in_box', 'merged_paragraph', 'no_lines')
+BAD_CHARS = re.compile(r'[\u0400-\u052F\u2E80-\uD7FF\uFFFD]|</?[a-zA-Z_][^>]{0,15}>|\|\s*---')  # model junk: CJK, Cyrillic, HTML, markdown tables
+
+
+def x_span(q):
+    return min(p[0] for p in q), max(p[0] for p in q)
+
+
+def column(rows):
+    """(left, right) of the page being read, as fractions: where most detector width sits, so a facing page falls outside it. None under 3 rows."""
+    spans = sorted((sum(x_span(q)) / 2, *x_span(q)) for q in rows if x_span(q)[1] - x_span(q)[0] > .02)
+    if len(spans) < 3:
+        return None
+    half, seen = sum(r - l for _, l, r in spans) / 2, 0
+    for mid, l, r in spans:
+        seen += r - l
+        if seen >= half:
+            break
+    near = [s for s in spans if abs(s[0] - mid) < .22]
+    lefts, rights = sorted(s[1] for s in near), sorted(s[2] for s in near)
+    return lefts[len(lefts) // 10], rights[-1 - len(rights) // 10]  # 10% in from each side: stray rows don't widen it
+
+
+def flags(text, lines, rows):
+    """Why this page's boxes may deserve a human look, {name in FLAGS: detail}. Heuristics for review only, never change the output.
+    lines: from lines(); rows: every detector box, 4 [x, y] fractions."""
+    out = {}
+    raw = [l['text'] for l in lines]
+    keys = collections.Counter(k for k in map(norm, raw) if len(k) >= 8)
+    repeated = sum(n - 1 for n in keys.values() if n > 1)
+    if repeated >= 2:
+        out['replay_in_boxes'] = f'{repeated}/{len(lines)} boxes'
+    bad = next(filter(None, map(BAD_CHARS.search, raw)), None)
+    if bad:
+        out['bad_chars_in_box'] = bad.string[max(bad.start() - 10, 0):bad.end() + 10]
+    filled = sorted(map(len, (l for l in text.split('\n') if l.strip())))
+    usual = filled[len(filled) // 2] if filled else 0
+    merged = sum(len(l) >= 200 or (len(l) >= 110 and len(l) >= 2.2 * usual) for l in raw)  # one box, many rows
+    if merged:
+        out['merged_paragraph'] = f'{merged} lines'
+    col = column(rows)
+    if col:
+        left, right = col[0] - .02, col[1] + .02
+        off = sum(not left <= center(l['box'])[0] <= right for l in lines)
+        if off >= 4 and off >= .2 * len(lines):
+            out['boxes_off_column'] = f'{off}/{len(lines)} boxes'
+        wide = sum(x_span(l['box'])[1] - x_span(l['box'])[0] > 1.2 * (col[1] - col[0]) for l in lines)
+        if wide:
+            out['box_too_wide'] = f'{wide} boxes'
+    long_rows = [q for q in rows if x_span(q)[1] - x_span(q)[0] > .12 and (not col or left <= center(q)[0] <= right)]
+    if lines:
+        polys = [np.array(l['box'], dtype=np.float32) for l in lines]
+        empty = sum(first_box(polys, tuple(map(float, center(q)))) is None for q in long_rows)
+        if len(long_rows) >= 8 and empty >= .25 * len(long_rows):
+            out['rows_no_box'] = f'{empty}/{len(long_rows)} rows'
+    elif len(long_rows) >= 3:
+        out['no_lines'] = f'{len(long_rows)} rows'
+    return out

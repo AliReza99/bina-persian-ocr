@@ -1,15 +1,16 @@
 import { html, useEffect, useRef, useState } from '/vendor/htm-preact.js';
 import { get } from './api.js';
-import { kb, statusOf, STATUS_LABEL, when } from './util.js';
+import { FLAG_LABEL, kb, statusOf, STATUS_LABEL, when } from './util.js';
 
 export function Detail({ job: j, onClose }) {
-  const dialog = useRef(), [text, setText] = useState(null);
+  const dialog = useRef(), [text, setText] = useState(null), [lines, setLines] = useState([]);
   useEffect(() => {
     if (!j) return;
     setText(null);
+    setLines([]);
     dialog.current.showModal();
     let live = true;  // ignore a late answer for a job that is no longer open
-    get(`/api/admin/text/${j.id}`).then(r => live && setText(r.text ?? 'No text (failed, still running, or recorded before text was kept)'));
+    get(`/api/admin/text/${j.id}`).then(r => { if (!live) return; setText(r.text ?? 'No text (failed, still running, or recorded before text was kept)'); setLines(r.lines); });
     return () => { live = false; };
   }, [j?.id]);
 
@@ -24,10 +25,12 @@ export function Detail({ job: j, onClose }) {
       <button class="ghost" aria-label="Close" onClick=${() => dialog.current.close()}>✕</button>
     </div>
     ${j && html`<div class="d-body">
-      <a class="d-img" href="/api/admin/thumb/${j.id}" target="_blank"><img src="/api/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/></a>
+      <a class="d-img" href="/api/admin/thumb/${j.id}" target="_blank"><img src="/api/admin/thumb/${j.id}" alt="Thumbnail of job ${j.id}"/>
+        <svg viewBox="0 0 ${j.width} ${j.height}" aria-hidden="true">${lines.map(l => html`<polygon key=${l.index} class=${l.guess ? 'guess' : ''} points=${l.box.map(([x, y]) => `${x * j.width},${y * j.height}`).join(' ')}/>`)}</svg></a>
       <div class="d-info">
         <dl>${rows.slice(1).map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
         ${j.error ? html`<pre>${j.error}</pre>` : null}
+        ${Object.keys(j.flags).length ? html`<ul class="d-flags">${Object.entries(j.flags).map(([k, v]) => html`<li key=${k}><b>${FLAG_LABEL[k]}</b> ${v}</li>`)}</ul>` : null}
         <pre class="ocr">${text ?? 'Loading…'}</pre>
       </div>
     </div>`}
