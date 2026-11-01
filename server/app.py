@@ -55,13 +55,20 @@ class Handler(BaseHTTPRequestHandler):
         # bound to one address (e.g. Tailscale), this machine reaches itself from that same address
         return ip in LOCAL_IPS or ip == self.server.server_address[0]
 
+    def same_site(self):
+        """Not a browser sent here by another website: DNS rebinding changes Host, a cross-site POST sets Origin."""
+        host = self.headers.get('Host', '')
+        origin = self.headers.get('Origin')
+        return (host.rsplit(':', 1)[0] in ('127.0.0.1', 'localhost', self.server.server_address[0])
+                and (not origin or origin.split('://', 1)[-1] == host))
+
     def guard(self, path):
         """True if the request may proceed; otherwise the rejection is already sent. Sets self.who."""
         given = self.headers.get('Authorization', '').removeprefix('Bearer ')
         self.who = (given and jobs.token_client(given, self.client_address[0])) or None
         if path in PUBLIC or (path in OCR_PATHS and self.who):
             return True
-        if path not in OCR_PATHS and (self.is_local() or (path in DOC_PATHS and self.who)):
+        if path not in OCR_PATHS and ((self.is_local() and self.same_site()) or (path in DOC_PATHS and self.who)):
             return True
         if path in OCR_PATHS or path in DOC_PATHS:
             self.reply(401, {'error': 'missing or wrong token'})
@@ -90,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
                                     'version': VERSION, 'busy': s['running'] is not None,
                                     'waiting': s['waiting'], 'docs': '/docs'})
         if path == '/api/v1/whoami':  # lets a client check its token without sending a page
-            return self.reply(200, {'name': self.who})
+            return self.reply(200, {'name': self.who, 'paused': jobs.token_paused(self.who)})
         asset = (STATIC / path[1:]).resolve()
         if path.split('/')[1] in ASSET_DIRS and asset.is_relative_to(STATIC) and asset.suffix in ASSET_TYPES and asset.is_file():
             # vendor files never change; our own code must not go stale after an edit

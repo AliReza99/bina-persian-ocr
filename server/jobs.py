@@ -46,10 +46,9 @@ class Rejected(Exception):
 def admit(client):
     """Reserve a slot for `client` (a token's name, or None) or raise Rejected('paused' | 'busy'). Pair with release()."""
     global in_flight
-    with _db_lock:
-        row = _db.execute('SELECT paused FROM tokens WHERE name = ?', (client,)).fetchone()
+    client_paused = token_paused(client)
     with _state_lock:
-        reason = 'paused' if paused or (row and row['paused']) else 'busy' if in_flight > MAX_WAITING else None
+        reason = 'paused' if paused or client_paused else 'busy' if in_flight > MAX_WAITING else None
         if not reason:
             in_flight += 1
             return
@@ -236,6 +235,13 @@ def token_client(token, ip):
 def tokens():
     with _db_lock:
         return [dict(r) for r in _db.execute('SELECT id, name, created, last_used, last_ip, paused FROM tokens ORDER BY id')]
+
+
+def token_paused(client):
+    """Whether this one client (a token's name) is paused; the pause for everyone is separate."""
+    with _db_lock:
+        row = _db.execute('SELECT paused FROM tokens WHERE name = ?', (client,)).fetchone()
+    return bool(row and row['paused'])
 
 
 def set_token_paused(token_id, value):

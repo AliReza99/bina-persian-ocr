@@ -52,7 +52,7 @@ The line detector models for line boxes (PP-OCRv5, a few MB) download on the fir
 ./run.sh --host 100.x.y.z     # Tailscale IP
 ```
 
-UI: http://127.0.0.1:8001/ , admin: /admin, API docs with a try-it form: /api-docs. All open only from the Bina machine itself, with no login; from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
+UI: http://127.0.0.1:8001/ , admin: /admin, API docs with a try-it form: /api-docs. All open only from the Bina machine itself, with no login, at `127.0.0.1`, `localhost` or the `--host` address (requests from other websites get `403`); from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
 
 Tested on Linux. On other systems the process RAM card shows `-`.
 
@@ -149,7 +149,7 @@ const { text } = await r.json();
 
 ### `GET /api/v1/whoami`
 
-`200 {"name": "notewise-prod"}`: the client token's name, so a client can check its token without sending a page. `401` if the token is missing or wrong.
+`200 {"name": "notewise-prod", "paused": false}`: the client token's name, so a client can check its token without sending a page, and whether this client is paused (it then gets `503 paused` while `/health` still says `ok`; the pause for everyone shows in `/health`). `401` if the token is missing or wrong.
 
 ### Admin
 

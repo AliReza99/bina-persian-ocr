@@ -24,6 +24,9 @@ app = next(t['id'] for t in jobs.tokens() if t['name'] == 'app')
 
 jobs.set_token_paused(app, True)
 assert rejected('app') == 'paused', 'paused client got in'
+assert jobs.token_paused('app') is True, 'whoami would miss the pause'
+assert jobs.token_paused('benchmark') is False, 'whoami would report another client as paused'
+assert jobs.token_paused(None) is False, 'no token counts as paused'
 assert rejected('benchmark') is None, 'pausing one client stopped another'
 assert rejected(None) is None, 'pausing a client stopped the Playground'
 assert jobs.in_flight == 0, 'a rejected request kept its slot'

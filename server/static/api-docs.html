@@ -113,7 +113,7 @@ const EPS = [
   { g:'Client', m:'POST', p:'/api/v1/ocr', auth:true, body:'image',
     d:'Extract the text from one image, plus a box for each line. Body: raw image bytes, max 30 MB. One runs at a time, 3 more wait, then 503 busy.',
     q:[{ n:'masked', v:['0','1'], h:'1 = old masked decoding, ~1.75x slower' }] },
-  { g:'Client', m:'GET', p:'/api/v1/whoami', auth:true, d:"The client token's name. Check a token without sending a page." },
+  { g:'Client', m:'GET', p:'/api/v1/whoami', auth:true, d:"The client token's name, and whether this client is paused. Check a token without sending a page." },
   { g:'Client', m:'GET', p:'/health', d:'Status, device, version, queue. No auth.' },
   { g:'Client', m:'GET', p:'/docs', d:'The API reference as Markdown (also /llms.txt).' },
   { g:'Admin', m:'GET', p:'/api/admin/state', d:'Paused, running job, queue, time limit, version, device, uptime, live samples.' },
