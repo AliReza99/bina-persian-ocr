@@ -6,6 +6,7 @@ Docs:  http://127.0.0.1:8001/docs (README.md)
 API:   curl -H 'Authorization: Bearer <client token>' --data-binary @page.jpg http://127.0.0.1:8001/api/v1/ocr
 """
 import argparse, io, json, pathlib, sys, time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -28,6 +29,7 @@ LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
 PAGES = {'/': 'index.html', '/admin': 'admin.html'}
 ASSET_DIRS = ('vendor', 'js', 'css')  # served from static/, admin-guarded like the pages
 ASSET_TYPES = {'.js': 'text/javascript', '.css': 'text/css'}
+PREP = ThreadPoolExecutor(1)  # box detection + rough reads, on the CPU while Bina reads on the GPU
 
 
 def gpu_mem():
@@ -200,6 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         client = self.who  # the token's name: a client can't relabel itself
         job_id = jobs.start(client, ip, image, size)
         tick = [time.monotonic()]
+        rows = PREP.submit(align.persian_rows, image) if boxes else None  # guesses Persian; English redoes it after
 
         def on_start():
             tick[0] = time.monotonic()  # time inference only, not the wait for the model
@@ -216,11 +219,11 @@ class Handler(BaseHTTPRequestHandler):
         jobs.finish(job_id, seconds, result)
         extra = {}
         if boxes:
-            # after the model lock is released, so the next page reads on the GPU meanwhile
+            # matching needs the text, so it runs after the model lock is released
             started = time.monotonic()
             try:
                 detector = [] if debug else None  # the test page also gets every detector box, to see misses
-                extra['lines'] = align.lines(image, result['text'], detector)
+                extra['lines'] = align.lines(image, result['text'], detector, rows)
                 if debug:
                     extra['detector'] = detector
             except Exception as e:  # boxes are extra: never fail a page that was read

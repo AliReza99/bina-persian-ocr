@@ -173,25 +173,36 @@ def fill(quad, used, boxes, keys, per_char, rtl):
     return guessed
 
 
-def lines(image, text, debug=None):
+def persian_rows(image):
+    """Detector boxes with their Tesseract reads, top to bottom. Needs no OCR text, so it can run while Bina reads."""
+    rgb = np.asarray(image)
+    with _lock:
+        # detector boxes only (the recognizer would drop low-confidence ones); Tesseract reads them
+        res = DETECT(rgb, use_rec=False, use_cls=False)
+        if res.boxes is None:
+            return []
+        polys = sorted(res.boxes.tolist(), key=lambda b: center(b)[1])
+        return list(zip(polys, tesseract_reads(rgb, [np.array(b, dtype=np.float32) for b in polys])))
+
+
+def lines(image, text, debug=None, rows=None):
     """image: the RGB PIL image that was read; text: its OCR text.
     Returns [{'line': index in text.split('\\n'), 'box': 4 [x, y] points as fractions of the image, 'guess'}].
-    debug: a list to fill with every detector box {'box', 'read', 'used'} (used = matched to a line, not guessed)."""
+    debug: a list to fill with every detector box {'box', 'read', 'used'} (used = matched to a line, not guessed).
+    rows: a Future of persian_rows(image) started earlier; used only if the text is Persian."""
     index = [i for i, l in enumerate(text.split('\n')) if l.strip()]  # back to raw line numbers
     keys = [norm(text.split('\n')[i]) for i in index]
     if not keys:
         return []
-    rgb = np.asarray(image)
     rtl = sum('؀' <= c <= 'ۿ' for c in text) > len(text) * .3
-    with _lock:
-        # Persian: detector boxes only (the recognizer would drop low-confidence ones); Tesseract reads them
-        res = DETECT(rgb, use_rec=False, use_cls=False) if rtl else ENGLISH(rgb)
-        if res.boxes is None:
-            return []
-        reads = getattr(res, 'txts', None) or [''] * len(res.boxes)
-        boxes = sorted(zip(res.boxes.tolist(), reads), key=lambda b: center(b[0])[1])
-        if rtl:
-            boxes = list(zip([b for b, _ in boxes], tesseract_reads(rgb, [np.array(b, dtype=np.float32) for b, _ in boxes])))
+    if rtl:
+        boxes = rows.result() if rows else persian_rows(image)
+    else:
+        with _lock:
+            res = ENGLISH(np.asarray(image))
+        boxes = sorted(zip(res.boxes.tolist(), getattr(res, 'txts', None) or [''] * len(res.boxes)), key=lambda b: center(b[0])[1]) if res.boxes is not None else []
+    if not boxes:
+        return []
     width = [np.linalg.norm(np.subtract(b[1], b[0])) for b, _ in boxes]
     per_char = sum(width) / max(1, sum(map(len, keys)))  # page-wide pixels per character
     placed = match(boxes, keys, per_char, width)
