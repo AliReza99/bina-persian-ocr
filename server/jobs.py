@@ -22,6 +22,8 @@ if 'ip' not in _cols:  # added with client tokens
 # Only a hash is kept: a token is shown once, when it's made.
 _db.execute('''CREATE TABLE IF NOT EXISTS tokens (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE, hash TEXT UNIQUE, created REAL, last_used REAL, last_ip TEXT)''')
+if 'paused' not in [c[1] for c in _db.execute('PRAGMA table_info(tokens)')]:  # added with per-client pause
+    _db.execute('ALTER TABLE tokens ADD COLUMN paused INTEGER DEFAULT 0')
 _db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value)')
 _db.commit()
 _db_lock = threading.Lock()
@@ -39,11 +41,13 @@ class Rejected(Exception):
     pass
 
 
-def admit():
-    """Reserve a slot or raise Rejected('paused' | 'busy'). Pair with release()."""
+def admit(client):
+    """Reserve a slot for `client` (a token's name, or None) or raise Rejected('paused' | 'busy'). Pair with release()."""
     global in_flight
+    with _db_lock:
+        row = _db.execute('SELECT paused FROM tokens WHERE name = ?', (client,)).fetchone()
     with _state_lock:
-        reason = 'paused' if paused else 'busy' if in_flight > MAX_WAITING else None
+        reason = 'paused' if paused or (row and row['paused']) else 'busy' if in_flight > MAX_WAITING else None
         if not reason:
             in_flight += 1
             return
@@ -229,7 +233,13 @@ def token_client(token, ip):
 
 def tokens():
     with _db_lock:
-        return [dict(r) for r in _db.execute('SELECT id, name, created, last_used, last_ip FROM tokens ORDER BY id')]
+        return [dict(r) for r in _db.execute('SELECT id, name, created, last_used, last_ip, paused FROM tokens ORDER BY id')]
+
+
+def set_token_paused(token_id, value):
+    with _db_lock:
+        _db.execute('UPDATE tokens SET paused = ? WHERE id = ?', (int(value), token_id))
+        _db.commit()
 
 
 def revoke_token(token_id):

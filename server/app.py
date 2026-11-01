@@ -155,10 +155,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(201, {'name': name, 'token': jobs.create_token(name)})
             except ValueError as e:
                 return self.reply(409, {'error': str(e)})
-        token_id = url.path.removeprefix('/api/admin/tokens/').removesuffix('/revoke')
-        if url.path.endswith('/revoke') and token_id.isdigit():
+        token_id, _, action = url.path.removeprefix('/api/admin/tokens/').partition('/')
+        if action == 'revoke' and token_id.isdigit():
             jobs.revoke_token(int(token_id))
             return self.reply(200, {'revoked': True})
+        if action in ('pause', 'resume') and token_id.isdigit():
+            jobs.set_token_paused(int(token_id), action == 'pause')
+            return self.reply(200, {'paused': action == 'pause'})
         if url.path == '/api/admin/clear':
             jobs.clear()
             return self.reply(200, {'cleared': True})
@@ -188,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
         if max(image.size) > MAX_EDGE:
             image.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
         try:
-            jobs.admit()
+            jobs.admit(self.who)
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:

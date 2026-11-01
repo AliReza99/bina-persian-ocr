@@ -17,6 +17,10 @@ export function Tokens() {
     setArmed(null);
     reload();
   };
+  const togglePause = async t => {
+    await post(`/api/admin/tokens/${t.id}/${t.paused ? 'resume' : 'pause'}`);
+    reload();
+  };
   const create = async e => {
     e.preventDefault();
     const r = await post('/api/admin/tokens', { name });
@@ -34,9 +38,10 @@ export function Tokens() {
   <div class="card table">
     <table>
       <thead><tr><th>Name</th><th>Last used</th><th>Last IP</th><th></th></tr></thead>
-      <tbody>${tokens.length ? tokens.map(t => html`<tr key=${t.id} class="static"><td title=${"created " + when(t.created)}>${t.name}</td>
+      <tbody>${tokens.length ? tokens.map(t => html`<tr key=${t.id} class="static"><td title=${"created " + when(t.created)}>${t.name}${t.paused ? html` <b class="warn">paused</b>` : ''}</td>
         <td>${t.last_used ? ago(t.last_used) : 'never'}</td><td>${t.last_ip ?? '-'}</td>
-        <td class="end"><button class="danger sm" onClick=${() => revoke(t)}>${armed === t.id ? 'Confirm revoke' : 'Revoke'}</button></td></tr>`)
+        <td class="end"><button class=${t.paused ? 'primary sm' : 'sm'} title="Paused: this client's new requests get 503; its queued jobs still finish" onClick=${() => togglePause(t)}>${t.paused ? 'Resume' : 'Pause'}</button>
+          <button class="danger sm" onClick=${() => revoke(t)}>${armed === t.id ? 'Confirm revoke' : 'Revoke'}</button></td></tr>`)
         : html`<tr class="static"><td colspan="4" class="empty">No tokens</td></tr>`}</tbody>
     </table>
   </div>
