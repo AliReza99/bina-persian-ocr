@@ -171,10 +171,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def ocr(self, url, debug=False):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        masked, boxes = q.get('masked', '0'), q.get('boxes', '1')
-        for name, value in (('masked', masked), ('boxes', boxes)):
-            if value not in ('0', '1'):
-                return self.reply(400, {'error': f'{name} must be 0 or 1'})
+        masked = q.get('masked', '0')
+        if masked not in ('0', '1'):
+            return self.reply(400, {'error': 'masked must be 0 or 1'})
         size, raw = self.body(MAX_BYTES)
         if raw is None:
             return self.reply(413 if size else 400, {'error': f'send image bytes as body, max {MAX_BYTES} bytes'})
@@ -193,16 +192,16 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.Rejected as e:
             return self.reply(503, {'error': str(e)}, [('Retry-After', '30' if str(e) == 'paused' else '5')])
         try:
-            self.run_job(image, size, boxes == '1', debug, masked == '1')
+            self.run_job(image, size, debug, masked == '1')
         finally:
             jobs.release()
 
-    def run_job(self, image, size, boxes=True, debug=False, masked=False):
+    def run_job(self, image, size, debug=False, masked=False):
         ip = self.client_address[0]
         client = self.who  # the token's name: a client can't relabel itself
         job_id = jobs.start(client, ip, image, size)
         tick = [time.monotonic()]
-        rows = PREP.submit(align.persian_rows, image) if boxes else None  # guesses Persian; English redoes it after
+        rows = PREP.submit(align.persian_rows, image)  # guesses Persian; English redoes it after
 
         def on_start():
             tick[0] = time.monotonic()  # time inference only, not the wait for the model
@@ -218,18 +217,17 @@ class Handler(BaseHTTPRequestHandler):
         seconds = round(time.monotonic() - tick[0], 2)
         jobs.finish(job_id, seconds, result)
         extra = {}
-        if boxes:
-            # matching needs the text, so it runs after the model lock is released
-            started = time.monotonic()
-            try:
-                detector = [] if debug else None  # the test page also gets every detector box, to see misses
-                extra['lines'] = align.lines(image, result['text'], detector, rows)
-                if debug:
-                    extra['detector'] = detector
-            except Exception as e:  # boxes are extra: never fail a page that was read
-                print(f'align failed on job {job_id}: {e!r}', file=sys.stderr, flush=True)
-                extra['lines'] = []
-            extra['align_seconds'] = round(time.monotonic() - started, 2)
+        # matching needs the text, so it runs after the model lock is released
+        started = time.monotonic()
+        try:
+            detector = [] if debug else None  # the test page also gets every detector box, to see misses
+            extra['lines'] = align.lines(image, result['text'], detector, rows)
+            if debug:
+                extra['detector'] = detector
+        except Exception as e:  # boxes are extra: never fail a page that was read
+            print(f'align failed on job {job_id}: {e!r}', file=sys.stderr, flush=True)
+            extra['lines'] = []
+        extra['align_seconds'] = round(time.monotonic() - started, 2)
         self.reply(200, {**result, 'seconds': seconds, **extra})
 
 

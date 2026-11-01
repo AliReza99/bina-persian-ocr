@@ -179,9 +179,9 @@ const pts = box => box.map(p => p.join(',')).join(' ');
 // tag spans the box's right edge: top-right to bottom-right corner (box goes clockwise from top-left)
 const corner = ([, [x1, y1], [x2, y2]]) => ({ left: Math.max(x1, x2) * 100 + '%', top: y1 * 100 + '%', height: (y2 - y1) * 100 + '%' });
 
-// params always spelled out, so a toggle visibly changes the URL
-const query = p => `boxes=${p.boxes ? 1 : 0}&masked=${p.masked ? 1 : 0}`;
-const endpoint = p => `${location.origin}/api/v1/ocr?${query(p)}`;
+// only non-default params, so the samples stay minimal
+const query = p => p.masked ? 'masked=1' : '';
+const endpoint = p => `${location.origin}/api/v1/ocr${query(p) && '?' + query(p)}`;
 
 const SNIPPETS = {
   curl: (p, f) => `curl -X POST '${endpoint(p)}' \\
@@ -193,26 +193,19 @@ const SNIPPETS = {
   body: file, // raw bytes of ${f}: Blob, File or Buffer, no multipart
 });
 if (!res.ok) throw new Error((await res.json()).error);
-const data = await res.json(); // { text, incomplete, seconds${p.boxes ? ', lines, align_seconds' : ''} }`,
+const data = await res.json(); // { text, incomplete, seconds, lines, align_seconds }`,
   py: (p, f) => `import os, requests
 
 r = requests.post(
     '${location.origin}/api/v1/ocr',
-    params={'boxes': ${p.boxes ? 1 : 0}, 'masked': ${p.masked ? 1 : 0}},
-    headers={'Authorization': f"Bearer {os.environ['BINA_TOKEN']}"},
+${p.masked ? "    params={'masked': 1},\n" : ''}    headers={'Authorization': f"Bearer {os.environ['BINA_TOKEN']}"},
     data=open('${f}', 'rb'),  # raw bytes, no multipart
 )
 r.raise_for_status()
 print(r.json()['text'])`,
 };
 
-const TYPES = {
-  false: `type OcrResponse = {
-  text: string;        // lines separated by \\n
-  incomplete: boolean; // part of the text may be missing
-  seconds: number;     // inference time (GPU)
-};`,
-  true: `type Point = [x: number, y: number]; // 0..1 of image width / height
+const TYPE = `type Point = [x: number, y: number]; // 0..1 of image width / height
 
 type OcrResponse = {
   text: string;        // lines separated by \\n
@@ -224,8 +217,7 @@ type OcrResponse = {
     guess: boolean; // inferred from neighbouring lines
   }[];
   align_seconds: number; // locating lines (CPU), after inference
-};`,
-};
+};`;
 
 // tiny JSON highlighter: input is our own JSON.stringify output, escaped before tagging
 function highlight(json) {
@@ -277,7 +269,6 @@ function Page({ item, rows, show, hot, setHot }) {
 function Lines({ item, rows, hot, setHot }) {
   const ref = useRef();
   useEffect(() => { ref.current?.querySelector('.row.hot')?.scrollIntoView({ block: 'nearest' }); }, [hot]);
-  if (!item.result.lines) return html`<div class="empty">Sent with <code>boxes=0</code>: text only, no lines to place.</div>`;
   return html`
     <div class="pane" ref=${ref}>
       ${rows.map(r => html`
@@ -299,18 +290,18 @@ function Request({ item, params, setParams, busy, elapsed, run, pick }) {
   const f = item?.name.replace(/\s/g, '_') || 'page.jpg';
   const snippet = SNIPPETS[lang](params, f);
   const set = (k, v) => setParams(p => ({ ...p, [k]: v }));
-  const desc = { boxes: ['line boxes', '+0.3 to 3 s CPU'], masked: ['old decoding', '~1.75x slower'] };
+  const desc = { masked: ['old decoding', '~1.75x slower'] };
   return html`<section class="req">
     <div class="sec-h">Request</div>
     <div class="urlbar mono">
       <span class="method">POST</span>
-      <span class="url">/api/v1/ocr<span class="q">?</span>${['boxes', 'masked'].map((k, i) => html`${i ? html`<span class="q">&</span>` : ''}<span class="q">${k}=</span><span class="v">${params[k] ? 1 : 0}</span>`)}</span>
+      <span class="url">/api/v1/ocr${params.masked && html`<span class="q">?masked=</span><span class="v">1</span>`}</span>
       <${Copy} text=${endpoint(params)} label="Copy URL"/>
     </div>
     <div class="kv">
       <span>Params</span>
       <div class="params">
-        ${['boxes', 'masked'].map(k => html`<label class="param" title=${desc[k].join(', ')}>
+        ${['masked'].map(k => html`<label class="param" title=${desc[k].join(', ')}>
           <input type="checkbox" checked=${params[k]} onChange=${e => set(k, e.target.checked)}/><span class="mono">${k}</span></label>`)}
       </div>
       <span>Body</span>
@@ -351,7 +342,7 @@ function Response({ item, params, rows, hot, setHot, busy }) {
       ${r?.incomplete && html`<span class="status err" title="Part of the text may be missing">incomplete</span>`}
       ${item?.code && html`<span class=${'status' + (item.code >= 400 ? ' err' : '')}>${item.code}${item.code === 200 ? ' OK' : ''}</span>`}
     </div>
-    ${stale && !busy && html`<div class="stale">Sent with <code>${query(item.sent)}</code>, params changed since</div>`}
+    ${stale && !busy && html`<div class="stale">Sent with <code>${query(item.sent) || 'no params'}</code>, params changed since</div>`}
     ${r && html`
       <div class="stats" title="Total is measured in this browser; OCR and Boxes are the server's seconds and align_seconds, one after the other">
         <div class="stat"><span>Total</span><b>${sec(item.total)}</b></div>
@@ -371,7 +362,7 @@ function Response({ item, params, rows, hot, setHot, busy }) {
       ${tab === 'lines' && html`<${Lines} item=${item} rows=${rows} hot=${hot} setHot=${setHot}/>`}
       ${tab === 'text' && html`<div class="pane"><textarea readonly aria-label="Extracted text" value=${r.text}></textarea></div>`}
       ${tab === 'json' && html`<div class="pane"><pre dangerouslySetInnerHTML=${{ __html: highlight(json) }}></pre></div>`}
-      ${tab === 'type' && html`<div class="pane"><div class="note">Response shape for <code>boxes=${params.boxes ? 1 : 0}</code>. Full reference in <a href="/docs">API docs</a>.</div><pre dangerouslySetInnerHTML=${{ __html: hlCode(TYPES[params.boxes]) }}></pre></div>`}`}
+      ${tab === 'type' && html`<div class="pane"><div class="note">Full reference in <a href="/docs">API docs</a>.</div><pre dangerouslySetInnerHTML=${{ __html: hlCode(TYPE) }}></pre></div>`}`}
   </section>`;
 }
 
@@ -379,7 +370,7 @@ let nextId = 0;
 
 function App() {
   const [item, setItem] = useState(null);  // only the latest image is kept
-  const [params, setParams] = useState({ boxes: true, masked: false });
+  const [params, setParams] = useState({ masked: false });
   const [hot, setHot] = useState(null);
   const [over, setOver] = useState(false);
   const [show, setShow] = useState({ all: true, ok: true, guess: true, det: true, num: true });

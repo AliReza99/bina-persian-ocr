@@ -82,7 +82,6 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 
 | Param | Values | Default | Meaning |
 |---|---|---|---|
-| `boxes` | `0`, `1` | `1` | `1` = also return `lines` and `align_seconds` (where each line sits on the image), about 0.3 to 3 s more per page on the CPU; `0` = text only |
 | `masked` | `0`, `1` | `0` | `1` = old masked decoding, about 1.75x slower. Default output can differ from it on hard pages (photos with a facing page, very dense text), sometimes better, sometimes with junk lines at the end |
 
 **Body**: raw image bytes (PNG, JPG, WebP, anything Pillow reads), max 30 MB. No multipart, no JSON. `Content-Type` is ignored.
@@ -106,11 +105,11 @@ Images with a long edge over 2500 px are downscaled first; over 100 MP are rejec
 | `text` | string | transcript, lines separated by `\n` |
 | `incomplete` | bool | `true` if some region still hit a repetition loop after splitting, or the admin time limit ran out; part of the text may be missing |
 | `seconds` | number | inference time |
-| `lines` | array | only with `boxes=1`: one item per located line, in text order; lines with no box are left out |
+| `lines` | array | one item per located line, in text order; lines with no box are left out |
 | `lines[].line` | int | index into `text.split('\n')` (blank lines count) |
 | `lines[].box` | 4 × `[x, y]` | corners as fractions (0..1) of the image width and height, starting top-left, clockwise; a quad, so tilted lines fit |
 | `lines[].guess` | bool | `true` when the box was inferred from the lines around it rather than matched directly |
-| `align_seconds` | number | only with `boxes=1`: time to locate the lines (CPU), after `seconds` of inference |
+| `align_seconds` | number | time to locate the lines (CPU, about 0.3 to 3 s), after `seconds` of inference |
 
 Locating lines never fails the request: if it breaks, `lines` is `[]`. The text is always the model's; the boxes only say where it is. On a typical page about 85% of lines get a box; most of the rest are fragments with nothing to point at.
 
@@ -118,7 +117,7 @@ Locating lines never fails the request: if it breaks, `lines` is `[]`. The text 
 
 | Status | When |
 |---|---|
-| 400 | empty body, unreadable image, or bad `masked` or `boxes` |
+| 400 | empty body, unreadable image, or bad `masked` |
 | 404 | unknown path |
 | 401 | missing or wrong token |
 | 403 | admin route from another machine |
@@ -130,7 +129,6 @@ Locating lines never fails the request: if it breaks, `lines` is `[]`. The text 
 
 ```sh
 curl --data-binary @page.jpg http://127.0.0.1:8001/api/v1/ocr
-curl --data-binary @page.jpg 'http://127.0.0.1:8001/api/v1/ocr?boxes=0'   # text only, faster
 curl --data-binary @page.jpg 'http://127.0.0.1:8001/api/v1/ocr?masked=1'
 ```
 
@@ -170,7 +168,7 @@ From the Bina machine only, no token. Used by the `/admin` page.
 | `GET /api/admin/tokens` | `tokens`: `[{id, name, created, last_used, last_ip}]` |
 | `POST /api/admin/tokens` | body `{"name": "..."}`; `201 {name, token}`, the token shown only here; `409` if the name is taken |
 | `POST /api/admin/tokens/<id>/revoke` | deletes the token |
-| `POST /api/admin/ocr` | same as `POST /api/v1/ocr` (same query) plus `detector` with `boxes=1` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
+| `POST /api/admin/ocr` | same as `POST /api/v1/ocr` (same query) plus `detector` (every detector box: `box`, `read`, `used`), no token; the test page on `/` |
 
 `samples` items: `{t, cpu, rss_mb, gpu_load, gpu_temp, gpu_used_mb, gpu_total_mb}`, any of them null when unavailable. Reading `/api/admin/state` takes a sample at most every 5 s; after 30 s without reads the history starts over.
 
