@@ -52,7 +52,7 @@ The line detector models for line boxes (PP-OCRv5, a few MB) download on the fir
 ./run.sh --host 100.x.y.z     # Tailscale IP
 ```
 
-UI: http://127.0.0.1:8001/ , admin: /admin. Both open only from the Bina machine itself, with no login; from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
+UI: http://127.0.0.1:8001/ , admin: /admin, API docs with a try-it form: /api-docs. All open only from the Bina machine itself, with no login; from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
 
 Tested on Linux. On other systems the process RAM card shows `-`.
 

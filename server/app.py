@@ -26,7 +26,7 @@ OCR_PATHS = {'/api/v1/ocr', '/api/v1/whoami'}  # need a client token, even from 
 DOC_PATHS = {'/docs', '/llms.txt'}  # a client token or this machine
 # everything else is admin: this machine only, no login
 LOCAL_IPS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
-PAGES = {'/': 'index.html', '/admin': 'admin.html'}
+PAGES = {'/': 'index.html', '/admin': 'admin.html', '/api-docs': 'api-docs.html'}
 ASSET_DIRS = ('vendor', 'js', 'css')  # served from static/, admin-guarded like the pages
 ASSET_TYPES = {'.js': 'text/javascript', '.css': 'text/css'}
 PREP = ThreadPoolExecutor(1)  # box detection + rough reads, on the CPU while Bina reads on the GPU

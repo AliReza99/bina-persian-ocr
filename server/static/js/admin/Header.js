@@ -8,7 +8,7 @@ export function Header({ state }) {
     : run ? ['busy', `#${run.id} · ${Math.round(Date.now() / 1000 - run.started)}s`] : ['', 'ready'];
   return html`<header>
     <h1>Bina OCR</h1>
-    <nav><a href="/">Playground</a><a class="on" href="/admin">Admin</a><a href="/docs">API docs</a></nav>
+    <nav><a href="/">Playground</a><a class="on" href="/admin">Admin</a><a href="/api-docs">API docs</a></nav>
     <span class="grow"></span>
     <span class=${'health ' + cls} role="status"><i></i>${label} · ${state.device} · v${state.version} · up ${dur(state.uptime)}</span>
   </header>`;

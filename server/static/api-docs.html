@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bina OCR · API docs</title>
+<style>
+  :root {
+    --bg:#f7f7f8; --panel:#fff; --fg:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --code:#fafafa;
+    --accent:#2563eb; --ok:#16a34a; --warn:#d97706; --miss:#dc2626;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#0f0f11; --panel:#18181b; --fg:#f4f4f5; --muted:#a1a1aa; --line:#2e2e33; --soft:#232327; --code:#131316;
+    --accent:#60a5fa; --ok:#4ade80; --warn:#fbbf24; --miss:#f87171;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, "Vazirmatn", Tahoma, sans-serif; }
+  button, input, select, textarea { font:inherit; color:var(--fg); }
+  button { padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--muted); }
+  button:disabled { opacity:.45; cursor:default; }
+  input, select, textarea { padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--code); min-width:0; }
+  textarea { width:100%; min-height:60px; resize:vertical; }
+  code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  a { color:var(--accent); }
+
+  /* same bar as the playground and admin */
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:16px; padding:0 16px; height:48px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0; }
+  nav { display:flex; gap:2px; height:100%; }
+  nav a { display:flex; align-items:center; padding:0 12px; color:var(--muted); text-decoration:none; border-bottom:2px solid transparent; font-weight:500; }
+  nav a:hover { color:var(--fg); }
+  nav a.on { color:var(--fg); border-color:var(--accent); }
+  .token { display:flex; align-items:center; gap:10px; padding:12px 14px; margin-bottom:16px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .token label { flex:1; min-width:0; }
+  .token small { display:block; color:var(--muted); font-size:12px; }
+  #token-ui { display:flex; align-items:center; gap:8px; }
+  .token input { width:320px; }
+  .token .saved { color:var(--muted); margin-inline-end:4px; }
+  .token .danger { font-size:inherit; }
+
+  .wrap { display:flex; max-width:1200px; margin:0 auto; }
+  aside { position:sticky; top:48px; align-self:flex-start; width:240px; flex:none; padding:16px 8px 16px 16px; max-height:calc(100vh - 48px); overflow:auto; }
+  aside h3 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:14px 8px 4px; }
+  aside { overflow-x:hidden; }
+  aside a span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  aside a { display:flex; gap:8px; align-items:baseline; padding:3px 8px; border-radius:6px; color:var(--fg); text-decoration:none; font-size:12.5px; }
+  aside a:hover { background:var(--soft); }
+  main { flex:1; min-width:0; padding:16px; }
+
+  .m { display:inline-block; min-width:42px; text-align:center; font:700 11px/1.6 ui-monospace, monospace; border-radius:4px; padding:0 4px; }
+  .m.GET { color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .m.POST { color:var(--ok); background:color-mix(in srgb, var(--ok) 14%, transparent); }
+
+  details.ep { background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:10px; scroll-margin-top:60px; }
+  details.ep[open] { border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  summary { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  summary .p { font:600 13px ui-monospace, monospace; }
+  summary .d { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .lock { font-size:11px; color:var(--warn); border:1px solid currentColor; border-radius:99px; padding:0 7px; white-space:nowrap; }
+  .body { padding:0 14px 14px; border-top:1px solid var(--line); }
+  .body > p { margin:10px 0; }
+  .grid { display:grid; grid-template-columns:120px 1fr; gap:8px 12px; align-items:center; margin-top:12px; font-size:13px; }
+  .grid label { font:12.5px ui-monospace, monospace; }
+  .grid label small { display:block; font-family:system-ui; color:var(--muted); font-size:11px; }
+  .actions { display:flex; gap:8px; align-items:center; margin-top:12px; }
+  .send { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; padding:6px 18px; }
+  .send:hover:not(:disabled) { filter:brightness(1.08); border-color:var(--accent); }
+  .danger { color:var(--miss); font-size:12px; }
+
+  .box { margin-top:12px; border:1px solid var(--line); border-radius:8px; background:var(--code); overflow:hidden; }
+  .box-h { display:flex; align-items:center; gap:10px; padding:4px 6px 4px 12px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); }
+  .box-h .grow { flex:1; }
+  .box-h button { border:0; background:none; color:var(--muted); font-size:12px; padding:2px 8px; }
+  .box-h button:hover { color:var(--fg); }
+  .box pre { margin:0; padding:10px 12px; font-size:12px; line-height:1.6; overflow:auto; max-height:420px; white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+  .box img { display:block; max-width:100%; margin:10px; }
+  .status { padding:1px 7px; border-radius:5px; font:600 12px ui-monospace, monospace; background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok); }
+  .status.err { background:color-mix(in srgb, var(--miss) 15%, transparent); color:var(--miss); }
+  .k { color:#9333ea; } .s { color:#15803d; } .n { color:#c2410c; }
+  @media (prefers-color-scheme: dark) { .k { color:#c084fc; } .s { color:#86efac; } .n { color:#fdba74; } }
+
+  @media (max-width: 760px) {
+    aside { display:none; }
+    .token { flex-wrap:wrap; }
+    .token label { flex-basis:100%; }
+    #token-ui { flex:1; }
+    .token input { flex:1; width:auto; }
+    .grid { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bina OCR</h1>
+  <nav><a href="/">Playground</a><a href="/admin">Admin</a><a class="on" href="/api-docs">API docs</a></nav>
+</header>
+<div class="wrap">
+  <aside id="toc"></aside>
+  <main>
+    <div class="token">
+      <label><b>Client token</b>
+        <small>For routes marked <span class="lock">needs token</span>. Make one in <a href="/admin">Admin</a>.</small></label>
+      <div id="token-ui"></div>
+    </div>
+    <div id="eps"></div>
+  </main>
+</div>
+<script>
+// q: query params, path: {name} placeholders in p, body: 'image' or a JSON example, img: response is an image
+const EPS = [
+  { g:'Client', m:'POST', p:'/api/v1/ocr', auth:true, body:'image',
+    d:'Extract the text from one image, plus a box for each line. Body: raw image bytes, max 30 MB. One runs at a time, 3 more wait, then 503 busy.',
+    q:[{ n:'masked', v:['0','1'], h:'1 = old masked decoding, ~1.75x slower' }] },
+  { g:'Client', m:'GET', p:'/api/v1/whoami', auth:true, d:"The client token's name. Check a token without sending a page." },
+  { g:'Client', m:'GET', p:'/health', d:'Status, device, version, queue. No auth.' },
+  { g:'Client', m:'GET', p:'/docs', d:'The API reference as Markdown (also /llms.txt).' },
+  { g:'Admin', m:'GET', p:'/api/admin/state', d:'Paused, running job, queue, time limit, version, device, uptime, live samples.' },
+  { g:'Admin', m:'GET', p:'/api/admin/series', d:'Per-bucket job counts and latency, plus totals and top clients.',
+    q:[{ n:'range', v:['24h','1h','7d'] }] },
+  { g:'Admin', m:'GET', p:'/api/admin/jobs', d:'One page of job history.',
+    q:[{ n:'sort', v:['recent','slowest','failed'] }, { n:'status', v:['','ok','incomplete','error','running'] },
+       { n:'client' }, { n:'id', h:'job id' }, { n:'offset', h:'default 0' }, { n:'limit', h:'default 50, max 200' }] },
+  { g:'Admin', m:'GET', p:'/api/admin/text/{id}', d:"A job's extracted text; null for failed jobs." },
+  { g:'Admin', m:'GET', p:'/api/admin/thumb/{id}', img:true, d:"A job's JPEG thumbnail." },
+  { g:'Admin', m:'POST', p:'/api/admin/pause', d:'Stop accepting /api/v1/ocr (503 paused). Running and queued jobs finish.' },
+  { g:'Admin', m:'POST', p:'/api/admin/resume', d:'Start accepting /api/v1/ocr again.' },
+  { g:'Admin', m:'POST', p:'/api/admin/limit', body:'{"max_seconds": 120}', d:'Longest one job may use the model: whole seconds 5 to 3600, or null for no limit.' },
+  { g:'Admin', m:'GET', p:'/api/admin/tokens', d:'Client tokens: id, name, created, last used, last IP.' },
+  { g:'Admin', m:'POST', p:'/api/admin/tokens', body:'{"name": "my-app"}', d:'Make a client token. 201 with the token, shown only here; 409 if the name is taken.' },
+  { g:'Admin', m:'POST', p:'/api/admin/tokens/{id}/revoke', danger:true, d:'Delete a client token.' },
+  { g:'Admin', m:'POST', p:'/api/admin/clear', danger:true, d:'Delete all job history, thumbnails and stored text.' },
+  { g:'Admin', m:'POST', p:'/api/admin/ocr', body:'image', d:'Same as /api/v1/ocr plus every detector box, no token. Used by the Playground.',
+    q:[{ n:'masked', v:['0','1'] }] },
+];
+
+const $ = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k.startsWith('on') ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v);
+  e.append(...kids);
+  return e;
+};
+const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' })[c]);
+const hlJson = s => esc(s).replace(/("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g,
+  (m, str, colon, kw) => str ? `<span class="${colon ? 'k' : 's'}">${str}</span>${colon || ''}` : `<span class="${kw ? 'k' : 'n'}">${m}</span>`);
+const slug = ep => (ep.m + ep.p).replace(/[^a-z0-9]+/gi, '-');
+
+let token = '';
+try { token = localStorage.getItem('bina-token') || ''; } catch {}
+const tokenUI = document.getElementById('token-ui');
+function setToken(value) {
+  token = value;
+  try { token ? localStorage.setItem('bina-token', token) : localStorage.removeItem('bina-token'); } catch {}
+  paintToken();
+  document.dispatchEvent(new Event('token'));  // refreshes the curl snippets
+}
+function paintToken(editing = !token) {
+  if (!editing) return tokenUI.replaceChildren(
+    $('code', { class:'saved' }, '••••' + token.slice(-4)),
+    $('button', { onclick: () => paintToken(true) }, 'Replace'),
+    $('button', { class:'danger', onclick: () => setToken('') }, 'Remove'));
+  const input = $('input', { class:'mono', type:'password', placeholder:'paste token', autocomplete:'off', 'aria-label':'Client token',
+    onkeydown: e => e.key === 'Enter' && save() });
+  const save = () => input.value.trim() && setToken(input.value.trim());
+  tokenUI.replaceChildren(input, $('button', { class:'send', onclick: save }, 'Save'),
+    ...(token ? [$('button', { onclick: () => paintToken() }, 'Cancel')] : []));
+  if (token) input.focus();  // only on Replace: on load, focus would scroll away from a #link
+}
+paintToken();
+
+function render(ep) {
+  const fields = {};  // name -> input, for path and query params
+  const grid = $('div', { class:'grid' });
+  const field = (name, hint, input) => { fields[name] = input; grid.append($('label', {}, name, $('small', {}, hint || '')), input); };
+  for (const [, n] of ep.p.matchAll(/\{(\w+)\}/g)) field(n, 'path, required', $('input', { placeholder:n, inputmode:'numeric' }));
+  for (const q of ep.q || []) {
+    const input = q.v ? $('select', {}, ...q.v.map(v => $('option', { value:v }, v || '(any)'))) : $('input', { placeholder:'optional' });
+    field(q.n, 'query' + (q.h ? ', ' + q.h : ''), input);
+  }
+  let file = $('input', { type:'file', accept:'image/*' }), json = $('textarea', { class:'mono', spellcheck:'false' });
+  if (ep.body === 'image') { grid.append($('label', {}, 'body', $('small', {}, 'raw image bytes')), file); }
+  else if (ep.body) { json.value = ep.body; grid.append($('label', {}, 'body', $('small', {}, 'JSON')), json); }
+
+  const url = () => {
+    let missing, p = ep.p.replace(/\{(\w+)\}/g, (_, n) => fields[n].value.trim() || (missing = n, `{${n}}`));
+    const qs = new URLSearchParams();
+    for (const q of ep.q || []) if (fields[q.n].value) qs.set(q.n, fields[q.n].value);
+    return { path: p + (qs.size ? '?' + qs : ''), missing };
+  };
+  const curl = (mask) => {  // mask: shown on the page; copy gets the real token
+    const parts = ['curl'];
+    if (ep.m === 'POST' && !ep.body) parts.push('-X POST');
+    if (ep.auth) parts.push(`-H 'Authorization: Bearer ${!token ? '<token>' : mask ? '••••' + token.slice(-4) : token}'`);
+    if (ep.body === 'image') parts.push(`--data-binary @${file.files[0]?.name || 'page.jpg'}`);
+    else if (ep.body) parts.push(`-H 'Content-Type: application/json' -d '${json.value.replace(/\s*\n\s*/g, ' ')}'`);
+    parts.push(`'${location.origin}${url().path}'`);
+    return parts.join(' ');
+  };
+  const curlPre = $('pre');
+  const showCurl = () => { curlPre.textContent = curl(true); };
+  grid.addEventListener('input', showCurl); grid.addEventListener('change', showCurl);
+  document.addEventListener('token', showCurl);
+  showCurl();
+  const copyBtn = (get) => $('button', { onclick: e => navigator.clipboard.writeText(get()).then(() => { e.target.textContent = 'copied'; setTimeout(() => e.target.textContent = 'copy', 1200); }) }, 'copy');
+
+  const res = $('div');
+  const send = $('button', { class:'send', onclick: async () => {
+    const { path, missing } = url();
+    if (missing) return fields[missing].focus();
+    if (ep.danger && !confirm(`${ep.m} ${path}: are you sure?`)) return;
+    const opts = { method: ep.m, headers: {} };
+    if (ep.auth) opts.headers.Authorization = 'Bearer ' + token;
+    if (ep.body === 'image') { if (!file.files[0]) return file.click(); opts.body = file.files[0]; }
+    else if (ep.body) { opts.body = json.value; opts.headers['Content-Type'] = 'application/json'; }
+    send.disabled = true; send.textContent = 'Sending…';
+    const t0 = performance.now();
+    try {
+      const r = await fetch(path, opts);
+      const ms = Math.round(performance.now() - t0);
+      const type = r.headers.get('Content-Type') || '';
+      let out, raw;
+      if (type.startsWith('image/')) out = $('img', { src: URL.createObjectURL(await r.blob()), alt:'response image' });
+      else {
+        raw = await r.text();
+        out = $('pre');
+        try { raw = JSON.stringify(JSON.parse(raw), null, 2); out.innerHTML = hlJson(raw); } catch { out.textContent = raw; }
+      }
+      res.replaceChildren($('div', { class:'box' },
+        $('div', { class:'box-h' }, 'Response', $('span', { class:'status' + (r.ok ? '' : ' err') }, `${r.status} ${r.statusText}`),
+          `${ms} ms · ${type.split(';')[0] || 'no body'}`, $('span', { class:'grow' }), ...(raw != null ? [copyBtn(() => raw)] : [])),
+        out));
+    } catch (e) {
+      res.replaceChildren($('div', { class:'box' }, $('div', { class:'box-h' }, 'Response', $('span', { class:'status err' }, 'network error')), $('pre', {}, String(e))));
+    } finally { send.disabled = false; send.textContent = 'Send'; }
+  } }, 'Send');
+
+  return $('details', { class:'ep', id:slug(ep) },
+    $('summary', {}, $('span', { class:'m ' + ep.m }, ep.m), $('span', { class:'p' }, ep.p), $('span', { class:'d' }, ep.d),
+      ...(ep.auth ? [$('span', { class:'lock' }, 'needs token')] : [])),
+    $('div', { class:'body' },
+      $('p', {}, ep.d),
+      ...(grid.childElementCount ? [grid] : []),
+      $('div', { class:'actions' }, send, ...(ep.danger ? [$('span', { class:'danger' }, 'Destructive: asks first')] : [])),
+      $('div', { class:'box' }, $('div', { class:'box-h' }, 'curl', $('span', { class:'grow' }), copyBtn(curl)), curlPre),
+      res));
+}
+
+const eps = document.getElementById('eps'), toc = document.getElementById('toc');
+for (const g of [...new Set(EPS.map(e => e.g))]) {
+  eps.append($('h2', { style:'font-size:15px;margin:20px 0 8px' }, g === 'Admin' ? 'Admin (this machine only, no token)' : 'Client API'));
+  toc.append($('h3', {}, g));
+  for (const ep of EPS.filter(e => e.g === g)) {
+    eps.append(render(ep));
+    toc.append($('a', { href:'#' + slug(ep) },
+      $('span', { class:'m ' + ep.m }, ep.m), $('span', { class:'mono' }, ep.p.replace('/api/', '/'))));
+  }
+}
+const openHash = () => { const t = location.hash && document.getElementById(location.hash.slice(1)); if (t) { t.open = true; t.scrollIntoView(); } };
+addEventListener('hashchange', openHash);
+openHash();
+</script>
+</body>
+</html>
