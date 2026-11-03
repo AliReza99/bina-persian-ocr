@@ -11,7 +11,6 @@ server/jobs.py  queue admission, pause, SQLite job history
 server/monitor.py  GPU/CPU/RAM samples for the admin page
 server/static/  web UI (vendor/: uPlot charts)
 server/test_*.py  self-checks, run each with .venv/bin/python
-samples/        test images and outputs
 assets/         README screenshots
 data/           job history + thumbnails (created at runtime, not in git)
 .venv/          Python 3.11 env (not in git)
