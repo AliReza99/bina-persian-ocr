@@ -27,9 +27,13 @@ Persian:
 
 ![Extracting text from a Persian book page](assets/usage-persian.webp)
 
+Line boxes on the same page (green matched, orange guessed, purple unused detector boxes):
+
+![Persian book page with a box over each text line and the JSON response](assets/usage-persian-boxes.webp)
+
 Admin panel (`/admin`):
 
-![Admin dashboard with live GPU/CPU cards, 24h stats and trend charts](assets/admin.webp)
+![Admin dashboard with controls, client tokens, live GPU/CPU cards, traffic charts and jobs](assets/admin.webp)
 
 ## Model
 
@@ -54,15 +58,14 @@ The line detector models for line boxes (PP-OCRv5, a few MB) download on the fir
 ./run.sh --host 100.x.y.z     # Tailscale IP
 ```
 
-UI: http://127.0.0.1:8001/ , admin: /admin, API docs with a try-it form: /api-docs. All open only from the Bina machine itself, with no login, at `127.0.0.1`, `localhost` or the `--host` address (requests from other websites get `403`); from elsewhere, tunnel in (`ssh -L 8001:127.0.0.1:8001 <bina-pc>`). Make client tokens in admin.
+UI: http://127.0.0.1:8001/ , admin: /admin, API docs with a try-it form: /api-docs. All open only from the Bina machine itself, with no login (requests from other websites get `403`). The server listens on one address: `127.0.0.1` or `localhost` by default, with `--host` that address only (`http://100.x.y.z:8001/`). From elsewhere, tunnel to the address it listens on and open `http://localhost:8001/`: `ssh -L 8001:127.0.0.1:8001 <bina-pc>`, or `ssh -L 8001:100.x.y.z:8001 <bina-pc>` with `--host`. Make client tokens in admin.
 
 Tested on Linux. On other systems the process RAM card shows `-`.
 
 ### Admin panel
 
 - **Live** (only while the page is open, one sample per 5 s, last 10 minutes): queue, GPU memory/load/temperature, process CPU and RAM. Nothing is sampled when no one is watching.
-- **Last 24 hours**: jobs, success %, errors, incomplete, avg and p95 seconds, requests rejected because the queue was full.
-- **Trends** (1h / 24h / 7d): jobs per bucket, latency, seconds vs image size, top clients.
+- **Traffic** (1h / 24h / 7d): totals for the range (jobs, OK %, errors, cut short, avg and p95 seconds, requests rejected because the queue was full), charts of jobs and seconds per job, top clients.
 - **Jobs**: filter by status, client or id; sort; 50 per page. Times are relative (click to show full dates). Click a job for its image, details and extracted text.
 - **Flags**: pages whose line boxes may deserve a look (filter *Flagged*, or by reason). Click a job to see its line boxes on the image, green matched, orange guessed. Heuristics for review: some flagged pages are fine, and pages without boxes problems can still have junk in `text`.
 - **Pause / Resume**: pause rejects new `/api/v1/ocr` requests with `503 paused`; the running and queued jobs still finish. Use it before maintenance. Not kept across restarts.
